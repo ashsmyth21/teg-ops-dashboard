@@ -265,7 +265,7 @@ async function readSheet(sheetName) {
   try {
     const token = await getToken();
     if (!token) return [];
-    const url = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/items/${FILE_ID}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/drives/root:/Training/SOPs/2nd%20Line%20SOPs/Aircall_Dashboard_Buffer.xlsx.xlsx:/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
     const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
     if (!resp.ok) return [];
     const data = await resp.json();
