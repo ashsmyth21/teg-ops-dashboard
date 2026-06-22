@@ -161,8 +161,7 @@ thead th.col-team {
 
     <div class="section-label">Inbound calls by hour — weekdays</div>
     <div class="tabs" id="heatTabs">
-      <button class="tab active" data-team="support">Support</button>
-      <button class="tab" data-team="revered">Revered</button>
+      <button class="tab active" data-team="support+revered">Support+Revered</button>
       <button class="tab" data-team="onboarding">Onboarding</button>
       <button class="tab" data-team="risk">Risk</button>
       <button class="tab" data-team="keyaccounts">Key accounts</button>
@@ -173,8 +172,7 @@ thead th.col-team {
     <div class="section-label">Agent master report</div>
     <div class="tabs" id="agentTabs">
       <button class="tab active" data-team="all">All teams</button>
-      <button class="tab" data-team="Support">Support</button>
-      <button class="tab" data-team="Revered">Revered</button>
+      <button class="tab" data-team="Support + Revered">Support+Revered</button>
       <button class="tab" data-team="Onboarding">Onboarding</button>
       <button class="tab" data-team="Risk and compliance">Risk</button>
       <button class="tab" data-team="Key Accounts VIP Response Team">Key accounts</button>
@@ -247,12 +245,12 @@ const LUNCH_TOLERANCE = 300;
 const BRIDGE_STATUSES = ['out_for_lunch','on_a_break'];
 
 const TEAM_COLORS = {
-  'Support':'#1d4ed8','Revered':'#0e7490','Onboarding':'#15803d','Risk and compliance':'#b45309',
+  'Support + Revered':'#1d4ed8','Onboarding':'#15803d','Risk and compliance':'#b45309',
   'Key Accounts VIP Response Team':'#be185d','Support - Credit Control':'#7c3aed',
   'Smartbook members':'#374151','2nd line (Tech support team)':'#c2410c',
 };
 const TEAM_SHORT = {
-  'Support':'Support','Revered':'Revered','Onboarding':'Onboarding','Risk and compliance':'Risk',
+  'Support + Revered':'Support+Rev','Onboarding':'Onboarding','Risk and compliance':'Risk',
   'Key Accounts VIP Response Team':'Key accts','Support - Credit Control':'Credit ctrl',
   'Smartbook members':'Smartbook','2nd line (Tech support team)':'2nd line',
 };
@@ -365,7 +363,7 @@ function fh(s) { return (!s || s === '—' || s === '0h') ? '<span class="muted"
 // MAIN LOAD
 // ============================================================
 let globalData = {};
-let currentHeatTeam = 'support';
+let currentHeatTeam = 'support+revered';
 let currentAgentTeam = 'all';
 let charts = {};
 
@@ -374,24 +372,31 @@ async function loadDashboard() {
   document.getElementById('app').style.display = 'none';
 
   try {
-    const [companyRows, agentStatsRows, cvRows, zdRows, aiRows,
+    const [companyRows, agentStatsRows, cvRows,
+           zdSupportRows, zdOnboardRows, zdRiskRows, zdCreditRows, zdKeyRows, zd2ndRows,
+           aiRows,
            cbRows, teamRows,
-           supportIn, reveredIn, onboardIn, riskIn, creditIn, keyIn, smartIn,
-           supportOut, reveredOut, onboardOut, riskOut, creditOut, keyOut, smartOut] = await Promise.all([
+           supportRevIn, onboardIn, riskIn, creditIn, keyIn, smartIn,
+           supportRevOut, onboardOut, riskOut, creditOut, keyOut, smartOut] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
       readSheet('call voumes '),
-      readSheet('zendesk ticket activity'),
+      readSheet('Support zendesk ticket action'),
+      readSheet(' Onboarding zendesk ticket acti'),
+      readSheet('Risk zendesk ticket action'),
+      readSheet('Credit control zendesk ticket a'),
+      readSheet('Key accounts zendesk ticket act'),
+      readSheet('2nd line zendesk ticket action'),
       readSheet('ai summaries'),
       readSheet('call back data'),
       readSheet('cfg_agents'),
-      readSheet('Support data inbound'), readSheet('Revered data inbound'),
+      readSheet('Support + Revered data inbound'),
       readSheet('Onboparding data inbound'),
       readSheet('Risk data inbound'),
       readSheet('Credit control inbound'),
       readSheet('Key accounts inbound'),
       readSheet('Smartbook inbound'),
-      readSheet('Support data outbound'), readSheet('Revered data outbound'),
+      readSheet('Support + Revered data outbound'),
       readSheet('Onboparding data outbound'),
       readSheet('Risk data outbound'),
       readSheet('Credit control outbound'),
@@ -418,8 +423,7 @@ async function loadDashboard() {
 
     // ---- Team summary ----
     const teamDefs = [
-      { key:'support',     label:'Support',     inR:supportIn,   outR:supportOut  },
-      { key:'revered',     label:'Revered',     inR:reveredIn,   outR:reveredOut  },
+      { key:'support+revered', label:'Support+Revered', inR:supportRevIn, outR:supportRevOut },
       { key:'onboarding',  label:'Onboarding',  inR:onboardIn,   outR:onboardOut  },
       { key:'risk',        label:'Risk',        inR:riskIn,      outR:riskOut     },
       { key:'credit',      label:'Credit ctrl', inR:creditIn,    outR:creditOut   },
@@ -456,15 +460,16 @@ async function loadDashboard() {
       if (name) cvMap[name] = r;
     });
 
-    // ---- Zendesk map ----
+    // ---- Zendesk map (merge all per-team tabs) ----
     const zdMap = {};
-    zdRows.forEach(r => {
-      const name = String(r['Agent name']||'').trim();
+    const allZdRows = [...zdSupportRows, ...zdOnboardRows, ...zdRiskRows, ...zdCreditRows, ...zdKeyRows, ...zd2ndRows];
+    allZdRows.forEach(r => {
+      const name = String(r["Updater agent name"]||r["Agent name"]||"").trim();
       if (!name) return;
       if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
-      zdMap[name].internal += Number(r['Internal comments']) || 0;
-      zdMap[name].public   += Number(r['Public comments'])   || 0;
-      zdMap[name].solved   += Number(r['Tickets solved'])    || 0;
+      zdMap[name].internal += Number(r["Internal comments"]) || 0;
+      zdMap[name].public   += Number(r["Public comments"])   || 0;
+      zdMap[name].solved   += Number(r["Tickets solved"])    || 0;
     });
 
     // ---- AI summaries map ----
@@ -525,7 +530,7 @@ async function loadDashboard() {
 
     // Build heatmaps
     const heatSheets = {
-      support: supportIn, revered: reveredIn, onboarding: onboardIn, risk: riskIn,
+      'support+revered': supportRevIn, onboarding: onboardIn, risk: riskIn,
       keyaccounts: keyIn, smartbook: smartIn
     };
     Object.entries(heatSheets).forEach(([key, rows]) => {
@@ -571,7 +576,7 @@ function renderDashboard() {
   document.getElementById('mOutboundPct').textContent = mp(totals.outbound);
 
   // Team cards
-  const TC = {support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',keyaccounts:'#be185d',smartbook:'#374151'};
+  const TC = {'support+revered':'#1d4ed8',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',keyaccounts:'#be185d',smartbook:'#374151'};
   document.getElementById('teamGrid').innerHTML = teamSummary.map(t => {
     const tc = TC[t.key]||'#888';
     const ac = t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
