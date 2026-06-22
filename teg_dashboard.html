@@ -81,6 +81,43 @@ td.l{text-align:left}
 .ai-tooltip-label{font-size:9px;font-weight:600;color:#6b7a99;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
 tr.has-summary{cursor:pointer}
 tr.has-summary:hover td{background:#f8faff}
+
+/* ── Sticky Agent + Team columns ── */
+th.col-agent,
+td.col-agent {
+  position: sticky;
+  left: 0;
+  min-width: 170px;
+  max-width: 170px;
+  background: var(--surface);
+  z-index: 2;
+}
+th.col-team,
+td.col-team {
+  position: sticky;
+  left: 170px;
+  min-width: 110px;
+  max-width: 110px;
+  background: var(--surface);
+  z-index: 2;
+  border-right: 2px solid var(--border);
+}
+/* Ensure sticky headers sit above sticky cells */
+thead th.col-agent,
+thead th.col-team {
+  z-index: 3;
+}
+
+/* Hide Team column when a team filter is active */
+.hide-team th.col-team,
+.hide-team td.col-team {
+  display: none;
+}
+/* When team col hidden, shift agent sticky left to 0 (it already is) */
+.hide-team th.col-agent,
+.hide-team td.col-agent {
+  left: 0;
+}
 </style>
 </head>
 <body>
@@ -130,7 +167,6 @@ tr.has-summary:hover td{background:#f8faff}
       <button class="tab" data-team="risk">Risk</button>
       <button class="tab" data-team="keyaccounts">Key accounts</button>
       <button class="tab" data-team="smartbook">Smartbook</button>
-    
     </div>
     <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
 
@@ -147,11 +183,11 @@ tr.has-summary:hover td{background:#f8faff}
       <button class="tab" data-team="2nd line (Tech support team)">2nd line</button>
     </div>
     <div class="card" style="overflow-x:auto;margin-bottom:12px">
-      <table style="min-width:1300px">
+      <table id="agentTable" style="min-width:1300px">
         <thead>
           <tr>
-            <th class="l" rowspan="2">Agent</th>
-            <th class="l" rowspan="2">Team</th>
+            <th class="l col-agent" rowspan="2">Agent</th>
+            <th class="l col-team" rowspan="2">Team</th>
             <th colspan="9" style="color:var(--blue)">Aircall availability</th>
             <th colspan="3" style="color:var(--green)">Call volumes</th>
             <th colspan="3" style="color:var(--keyaccts)">Zendesk</th>
@@ -266,9 +302,6 @@ async function getToken() {
 // ============================================================
 // GRAPH API HELPERS
 // ============================================================
-let _driveId = null;
-let _siteId = null;
-
 async function getFileEndpoint() {
   return `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}`;
 }
@@ -341,25 +374,24 @@ async function loadDashboard() {
   document.getElementById('app').style.display = 'none';
 
   try {
-    // Load all sheets in parallel
     const [companyRows, agentStatsRows, cvRows, zdRows, aiRows,
            cbRows, teamRows,
            supportIn, reveredIn, onboardIn, riskIn, creditIn, keyIn, smartIn,
            supportOut, reveredOut, onboardOut, riskOut, creditOut, keyOut, smartOut] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
-      readSheet('call volumes'),
+      readSheet('call voumes '),
       readSheet('zendesk ticket activity'),
       readSheet('ai summaries'),
       readSheet('call back data'),
-      readSheet('cfg_agents '),
+      readSheet('cfg_agents'),
       readSheet('Support data inbound'), readSheet('Revered data inbound'),
       readSheet('Onboparding data inbound'),
       readSheet('Risk data inbound'),
       readSheet('Credit control inbound'),
       readSheet('Key accounts inbound'),
       readSheet('Smartbook inbound'),
-      readSheet('Support outbound'), readSheet('Revered data outbound'),
+      readSheet('Support data outbound'), readSheet('Revered data outbound'),
       readSheet('Onboparding data outbound'),
       readSheet('Risk data outbound'),
       readSheet('Credit control outbound'),
@@ -461,7 +493,6 @@ async function loadDashboard() {
     });
 
     // ---- Build agent list ----
-    const maxCallSec = Object.values(agentAgg).reduce((m,a) => Math.max(m,a.in_call||0), 0);
     const agents = Object.entries(agentAgg).map(([name, s]) => {
       const cv  = cvMap[name] || null;
       const zd  = zdMap[name] || null;
@@ -485,15 +516,14 @@ async function loadDashboard() {
                after_call_work:gs('after_call_work'), allowed_acw:allowedAcw, investigation,
                doing_back_office:gs('doing_back_office'), in_training:gs('in_training'),
                out_for_lunch:gs('out_for_lunch'), on_a_break:gs('on_a_break'),
-               inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai, maxCallSec };
+               inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai };
     }).sort((a,b) => (b.callUtil+b.zdUtil) - (a.callUtil+a.zdUtil));
 
-    // Get current week from agent stats
     const weekNum = agentStatsRows.length > 0 ? (agentStatsRows[0]['Week'] || '—') : '—';
 
     globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum };
 
-    // Build heatmaps from in sheets
+    // Build heatmaps
     const heatSheets = {
       support: supportIn, revered: reveredIn, onboarding: onboardIn, risk: riskIn,
       keyaccounts: keyIn, smartbook: smartIn
@@ -660,6 +690,15 @@ function renderHeatmap(team) {
 
 function renderAgents(team) {
   const { agents } = globalData;
+
+  // ── Show/hide Team column based on filter ──
+  const table = document.getElementById('agentTable');
+  if (team === 'all') {
+    table.classList.remove('hide-team');
+  } else {
+    table.classList.add('hide-team');
+  }
+
   const maxCallSec = agents.reduce((m,a) => Math.max(m,a.in_call||0), 0);
   const list = team === 'all' ? agents : agents.filter(a => a.team === team);
   const seen = {};
@@ -687,8 +726,8 @@ function renderAgents(team) {
       : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
     const hasAi = a.ai ? 'has-summary' : '';
     return `<tr class="${hasAi}" data-agent="${a.name.replace(/"/g,'&quot;')}">
-      <td class="l" style="font-weight:500">${a.name}${pw}</td>
-      <td class="l"><span class="team-pill" style="background:${tc}18;color:${tc}">${sh}</span></td>
+      <td class="l col-agent" style="font-weight:500">${a.name}${pw}</td>
+      <td class="l col-team"><span class="team-pill" style="background:${tc}18;color:${tc}">${sh}</span></td>
       <td>${fh(fmtHrs(a.available))}</td>
       <td><span class="bar-mini" style="width:${bw}px"></span>${fh(fmtHrs(a.in_call))}</td>
       <td>${fh(fmtHrs(a.after_call_work))}</td>
@@ -719,7 +758,6 @@ function initTooltip() {
     if (!cell) { tooltip.classList.remove('visible'); return; }
     const row = cell.closest('tr.has-summary');
     if (!row) { tooltip.classList.remove('visible'); return; }
-    // Only show on first cell (agent name)
     const cells = row.querySelectorAll('td');
     if (cells[0] !== cell) { tooltip.classList.remove('visible'); return; }
     const name = row.dataset.agent;
