@@ -162,8 +162,7 @@ thead th.col-team {
 
     <div class="section-label">Inbound calls by hour — weekdays</div>
     <div class="tabs" id="heatTabs">
-      <button class="tab active" data-team="support">Support</button>
-      <button class="tab" data-team="revered">Revered</button>
+      <button class="tab active" data-team="support">Support + Revered</button>
       <button class="tab" data-team="onboarding">Onboarding</button>
       <button class="tab" data-team="risk">Risk</button>
       <button class="tab" data-team="keyaccounts">Key accounts</button>
@@ -174,12 +173,11 @@ thead th.col-team {
     <div class="section-label">Agent master report</div>
     <div class="tabs" id="agentTabs">
       <button class="tab active" data-team="all">All teams</button>
-      <button class="tab" data-team="Support">Support</button>
-      <button class="tab" data-team="Revered">Revered</button>
+      <button class="tab" data-team="Support + Revered">Support + Revered</button>
       <button class="tab" data-team="Onboarding">Onboarding</button>
       <button class="tab" data-team="Risk and compliance">Risk</button>
       <button class="tab" data-team="Key Accounts VIP Response Team">Key accounts</button>
-      <button class="tab" data-team="Support - Credit Control">Credit control</button>
+      <button class="tab" data-team="Credit Control">Credit control</button>
       <button class="tab" data-team="Smartbook members">Smartbook</button>
       <button class="tab" data-team="2nd line (Tech support team)">2nd line</button>
     </div>
@@ -250,13 +248,13 @@ const LUNCH_TOLERANCE = 300;
 const BRIDGE_STATUSES = ['out_for_lunch','on_a_break'];
 
 const TEAM_COLORS = {
-  'Support':'#1d4ed8','Revered':'#0e7490','Onboarding':'#15803d','Risk and compliance':'#b45309',
-  'Key Accounts VIP Response Team':'#be185d','Support - Credit Control':'#7c3aed',
+  'Support + Revered':'#1d4ed8','Support':'#1d4ed8','Revered':'#0e7490','Onboarding':'#15803d','Risk and compliance':'#b45309',
+  'Key Accounts VIP Response Team':'#be185d','Credit Control':'#7c3aed',
   'Smartbook members':'#374151','2nd line (Tech support team)':'#c2410c',
 };
 const TEAM_SHORT = {
-  'Support':'Support','Revered':'Revered','Onboarding':'Onboarding','Risk and compliance':'Risk',
-  'Key Accounts VIP Response Team':'Key accts','Support - Credit Control':'Credit ctrl',
+  'Support + Revered':'Support+Rev','Support':'Support','Revered':'Revered','Onboarding':'Onboarding','Risk and compliance':'Risk',
+  'Key Accounts VIP Response Team':'Key accts','Credit Control':'Credit ctrl',
   'Smartbook members':'Smartbook','2nd line (Tech support team)':'2nd line',
 };
 
