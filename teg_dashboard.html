@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TEG Ops Dashboard</title>
+<script src="https://transportexchange.sharepoint.com/sites/TEGopsdashboard/Shared%20Documents/chart.umd.min.js"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f4f5f7;--surface:#ffffff;--border:#e2e4e9;
+  --text:#111318;--muted:#6b7280;--subtle:#9ca3af;
+  --blue:#1d4ed8;--blue-light:#eff6ff;--blue-mid:#3b82f6;
+  --green:#15803d;--green-light:#f0fdf4;
+  --red:#dc2626;--red-light:#fef2f2;
+  --amber:#b45309;--amber-light:#fffbeb;
+  --support:#1d4ed8;--onboarding:#15803d;--risk:#b45309;
+  --credit:#7c3aed;--keyaccts:#be185d;--smartbook:#374151;--secondline:#c2410c;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.topbar h1{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.topbar .week-badge{background:var(--blue-light);color:var(--blue);font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px}
+.topbar-right{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.refresh-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
+.refresh-btn:hover{background:var(--bg)}
+.dash{padding:20px 24px;max-width:1700px;margin:0 auto}
+.section-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px}
+.metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:4px}
+.metric-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+.metric-card .lbl{font-size:11px;color:var(--muted);margin-bottom:2px}
+.metric-card .val{font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.metric-card .sub{font-size:11px;color:var(--subtle);margin-top:3px}
+.team-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:4px}
+.team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.team-card .tc-name{font-size:11px;font-weight:600;margin-bottom:8px}
+.team-card .tc-row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px}
+.team-card .tc-val{font-weight:500;color:var(--text)}
+.tc-bar{height:3px;border-radius:2px;background:var(--border);margin:5px 0 4px}
+.tc-fill{height:3px;border-radius:2px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px}
+.chart-wrap{position:relative;height:200px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
+.tab{padding:4px 10px;font-size:11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--muted);font-weight:500}
+.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.heat-grid{display:grid;gap:2px}
+.heat-cell{height:24px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px}
+.heat-head{height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);font-weight:500}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;font-weight:500;color:var(--muted);text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:52px;background:var(--surface)}
+th.l{text-align:left}
+td{border-bottom:1px solid var(--border);padding:5px 6px;font-size:11px;white-space:nowrap;text-align:right}
+td.l{text-align:left}
+.team-pill{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:500}
+.score-pill{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:600}
+.bar-mini{height:5px;border-radius:3px;background:var(--blue-mid);display:inline-block;vertical-align:middle;margin-right:3px}
+.excess-pill{display:inline-block;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:600;background:var(--red-light);color:var(--red);margin-left:2px}
+.wp{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:600;background:var(--amber-light);color:var(--amber);margin-left:3px}
+.flag{display:inline-block;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:500;margin-left:2px}
+.muted{color:var(--subtle)}
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:var(--muted)}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--blue-mid);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-box{background:var(--red-light);border:1px solid #fecaca;border-radius:8px;padding:16px;color:var(--red);margin:20px}
+
+/* AI Summary tooltip */
+.ai-tooltip{
+  position:fixed;z-index:9999;
+  background:#1e2433;color:#e8eaf0;
+  border-radius:10px;padding:12px 14px;
+  max-width:320px;font-size:12px;line-height:1.55;
+  box-shadow:0 8px 32px rgba(0,0,0,.28);
+  pointer-events:none;opacity:0;
+  transition:opacity .15s;
+}
+.ai-tooltip.visible{opacity:1}
+.ai-tooltip-label{font-size:9px;font-weight:600;color:#6b7a99;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+tr.has-summary{cursor:pointer}
+tr.has-summary:hover td{background:#f8faff}
+</style>
+</head>
+<body>
+
+<div id="loadingScreen" class="loading">
+  <div class="spinner"></div>
+  <div>Loading dashboard data…</div>
+</div>
+
+<div id="app" style="display:none">
+  <div class="topbar">
+    <div class="topbar-left">
+      <h1>TEG Ops Dashboard</h1>
+      <span class="week-badge" id="weekBadge">Week —</span>
+    </div>
+    <div class="topbar-right">
+      <span id="lastUpdated">—</span>
+      <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div class="dash">
+    <div class="section-label">Company overview</div>
+    <div class="metrics-row">
+      <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub">Mon–Sun</div></div>
+      <div class="metric-card"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div>
+      <div class="metric-card"><div class="lbl">Inbound</div><div class="val" id="mInbound">—</div><div class="sub" id="mInboundPct">—</div></div>
+      <div class="metric-card"><div class="lbl">Outbound</div><div class="val" id="mOutbound">—</div><div class="sub" id="mOutboundPct">—</div></div>
+    </div>
+
+    <div class="section-label">Team overview</div>
+    <div id="teamGrid" class="team-grid"></div>
+
+    <div class="section-label">Call volume by day</div>
+    <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
+
+    <div class="two-col">
+      <div class="card"><div class="section-label" style="margin-top:0">Inbound answer rate</div><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
+      <div class="card"><div class="section-label" style="margin-top:0">Outbound connection rate</div><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
+    </div>
+
+    <div class="section-label">Inbound calls by hour — weekdays</div>
+    <div class="tabs" id="heatTabs">
+      <button class="tab active" data-team="support">Support</button>
+      <button class="tab" data-team="onboarding">Onboarding</button>
+      <button class="tab" data-team="risk">Risk</button>
+      <button class="tab" data-team="keyaccounts">Key accounts</button>
+      <button class="tab" data-team="smartbook">Smartbook</button>
+    </div>
+    <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
+
+    <div class="section-label">Agent master report</div>
+    <div class="tabs" id="agentTabs">
+      <button class="tab active" data-team="all">All teams</button>
+      <button class="tab" data-team="Support + Revered">Support</button>
+      <button class="tab" data-team="Onboarding">Onboarding</button>
+      <button class="tab" data-team="Risk and compliance">Risk</button>
+      <button class="tab" data-team="Key Accounts VIP Response Team">Key accounts</button>
+      <button class="tab" data-team="Support - Credit Control">Credit control</button>
+      <button class="tab" data-team="Smartbook members">Smartbook</button>
+      <button class="tab" data-team="2nd line (Tech support team)">2nd line</button>
+    </div>
+    <div class="card" style="overflow-x:auto;margin-bottom:12px">
+      <table style="min-width:1300px">
+        <thead>
+          <tr>
+            <th class="l" rowspan="2">Agent</th>
+            <th class="l" rowspan="2">Team</th>
+            <th colspan="9" style="color:var(--blue)">Aircall availability</th>
+            <th colspan="3" style="color:var(--green)">Call volumes</th>
+            <th colspan="3" style="color:var(--keyaccts)">Zendesk</th>
+            <th colspan="2">Score</th>
+          </tr>
+          <tr>
+            <th style="color:var(--blue)">Available</th>
+            <th style="color:var(--blue)">In call</th>
+            <th style="color:var(--blue)">ACW</th>
+            <th style="color:var(--blue)">Allowed ACW</th>
+            <th style="color:var(--red)">Excess ACW</th>
+            <th style="color:var(--green)">Investigation</th>
+            <th style="color:var(--blue)">Back office</th>
+            <th style="color:var(--credit)">Training</th>
+            <th style="color:var(--amber)">Lunch</th>
+            <th style="color:var(--green)">Ans. inbound</th>
+            <th style="color:var(--green)">Conn. outbound</th>
+            <th style="color:var(--green)">Outbound</th>
+            <th style="color:var(--keyaccts)">Internal</th>
+            <th style="color:var(--keyaccts)">Public</th>
+            <th style="color:var(--keyaccts)">Solved</th>
+            <th style="color:var(--blue-mid)">Call %</th>
+            <th style="color:var(--keyaccts)">ZD %</th>
+          </tr>
+        </thead>
+        <tbody id="agentBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section-label">Callback report</div>
+    <div class="card" style="overflow-x:auto;margin-bottom:24px">
+      <table><thead><tr>
+        <th class="l">Week</th><th class="l">Callback requests</th><th class="l">Called back</th>
+        <th class="l">Not actioned</th><th class="l">Rate</th><th class="l">Avg pending (mins)</th>
+      </tr></thead><tbody id="cbBody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="ai-tooltip" id="aiTooltip">
+  <div class="ai-tooltip-label">AI coaching summary</div>
+  <div id="aiTooltipText"></div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const SITE_ID = 'TEGOperationsSharePoint';
+const FILE_ID = 'B1A6CDCA-C01C-4D6C-B47B-EE0BFE1B3A38';
+const TENANT  = 'transportexchange';
+const CONTRACTED_SECS = 135000;
+const COMMENT_TIME    = 180;
+const LUNCH_EXPECTED  = 18000;
+const LUNCH_TOLERANCE = 300;
+const BRIDGE_STATUSES = ['out_for_lunch','on_a_break'];
+
+const TEAM_COLORS = {
+  'Support + Revered':'#1d4ed8','Onboarding':'#15803d','Risk and compliance':'#b45309',
+  'Key Accounts VIP Response Team':'#be185d','Support - Credit Control':'#7c3aed',
+  'Smartbook members':'#374151','2nd line (Tech support team)':'#c2410c',
+};
+const TEAM_SHORT = {
+  'Support + Revered':'Support','Onboarding':'Onboarding','Risk and compliance':'Risk',
+  'Key Accounts VIP Response Team':'Key accts','Support - Credit Control':'Credit ctrl',
+  'Smartbook members':'Smartbook','2nd line (Tech support team)':'2nd line',
+};
+
+// ============================================================
+// GRAPH API HELPERS
+// ============================================================
+async function getToken() {
+  // Try SharePoint/_api/contextinfo to get cookie-based token
+  // Since we're hosted in SharePoint, we can use fetch with credentials
+  return null; // credentials handled by cookies
+}
+
+const BASE = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/drives`;
+
+async function readSheet(sheetName) {
+  try {
+    const url = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/items/${FILE_ID}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
+    const resp = await fetch(url, { credentials: 'include', headers: { 'Accept': 'application/json' } });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    if (!data.values || data.values.length < 2) return [];
+    const headers = data.values[0];
+    return data.values.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[String(h)] = row[i]; });
+      return obj;
+    });
+  } catch(e) { return []; }
+}
+
+// ============================================================
+// DATA PROCESSING
+// ============================================================
+function fmtHrs(sec) {
+  if (!sec || sec <= 0) return '—';
+  return Math.round(sec / 3600) + 'h';
+}
+
+function parseTimeSec(t) {
+  if (!t) return 0;
+  const s = String(t);
+  const parts = s.split(':');
+  if (parts.length === 3) return (+parts[0])*3600 + (+parts[1])*60 + (+parts[2]);
+  return 0;
+}
+
+function scoreStyle(u) {
+  if (u >= 85) return { bg:'#f0fdf4', col:'#15803d' };
+  if (u >= 61) return { bg:'#fffbeb', col:'#b45309' };
+  return { bg:'#fef2f2', col:'#dc2626' };
+}
+
+function lunchFlag(secs, partWeek) {
+  if (partWeek) return '';
+  if (secs <= 0) return '<span class="flag" style="background:#fffbeb;color:#b45309">↓ not logged</span>';
+  if (secs > LUNCH_EXPECTED + LUNCH_TOLERANCE) return '<span class="flag" style="background:#fef2f2;color:#dc2626">↑ high</span>';
+  if (secs < LUNCH_EXPECTED - LUNCH_TOLERANCE) return '<span class="flag" style="background:#fffbeb;color:#b45309">↓ low</span>';
+  return '<span class="flag" style="background:#f0fdf4;color:#15803d">✓</span>';
+}
+
+function dv(v) { return (v != null && v > 0) ? v : '<span class="muted">—</span>'; }
+function fh(s) { return (!s || s === '—' || s === '0h') ? '<span class="muted">—</span>' : s; }
+
+// ============================================================
+// MAIN LOAD
+// ============================================================
+let globalData = {};
+let currentHeatTeam = 'support';
+let currentAgentTeam = 'all';
+let charts = {};
+
+async function loadDashboard() {
+  document.getElementById('loadingScreen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+
+  try {
+    // Load all sheets in parallel
+    const [companyRows, agentStatsRows, cvRows, zdRows, aiRows,
+           cbRows, teamRows,
+           supportIn, onboardIn, riskIn, creditIn, keyIn, smartIn,
+           supportOut, onboardOut, riskOut, creditOut, keyOut, smartOut] = await Promise.all([
+      readSheet('Company call data'),
+      readSheet('agent stats'),
+      readSheet('call voumes '),
+      readSheet('zendesk ticket activity'),
+      readSheet('ai summaries'),
+      readSheet('call back data'),
+      readSheet('agents in what team'),
+      readSheet('Support + Revered data inbound'),
+      readSheet('Onboparding data inbound'),
+      readSheet('Risk data inbound'),
+      readSheet('Credit control inbound'),
+      readSheet('Key accounts inbound'),
+      readSheet('Smartbook inbound'),
+      readSheet('Support + Revered data outbound'),
+      readSheet('Onboparding data outbound'),
+      readSheet('Risk data outbound'),
+      readSheet('Credit control outbound'),
+      readSheet('Key accounts outbound'),
+      readSheet('Smartbook outbound'),
+    ]);
+
+    // ---- Company metrics ----
+    const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const dayData = { inbound:{}, outbound:{}, missed:{}, total:{} };
+    companyRows.forEach(r => {
+      const day = r['Created Day of Week']; if (!day) return;
+      dayData.inbound[day]  = Number(r['Inbound Calls'])  || 0;
+      dayData.outbound[day] = Number(r['Outbound Calls']) || 0;
+      dayData.missed[day]   = Number(r['Missed Calls'])   || 0;
+      dayData.total[day]    = Number(r['total calls'])    || 0;
+    });
+    const totals = {
+      total:    dayOrder.reduce((s,d) => s+(dayData.total[d]||0),   0),
+      missed:   dayOrder.reduce((s,d) => s+(dayData.missed[d]||0),  0),
+      inbound:  dayOrder.reduce((s,d) => s+(dayData.inbound[d]||0), 0),
+      outbound: dayOrder.reduce((s,d) => s+(dayData.outbound[d]||0),0),
+    };
+
+    // ---- Team summary ----
+    const teamDefs = [
+      { key:'support',     label:'Support',     inR:supportIn,   outR:supportOut  },
+      { key:'onboarding',  label:'Onboarding',  inR:onboardIn,   outR:onboardOut  },
+      { key:'risk',        label:'Risk',        inR:riskIn,      outR:riskOut     },
+      { key:'credit',      label:'Credit ctrl', inR:creditIn,    outR:creditOut   },
+      { key:'keyaccounts', label:'Key accts',   inR:keyIn,       outR:keyOut      },
+      { key:'smartbook',   label:'Smartbook',   inR:smartIn,     outR:smartOut    },
+    ];
+    const teamSummary = teamDefs.map(def => {
+      const inF  = def.inR[0]  || {};
+      const outF = def.outR[0] || {};
+      return {
+        key: def.key, label: def.label,
+        inbound:   Number(inF['Inbound calls'])  || 0,
+        answered:  Number(inF['Answered inbound']) || 0,
+        answerPct: parseFloat(inF['Percentage of answered inbound calls']) || 0,
+        outbound:  Number(outF['Outbound calls']) || 0,
+        connOut:   Number(outF['Outbound calls (connected calls > x sec)']) || 0,
+        connPct:   parseFloat(outF['Percentage of Outbound calls (connected calls > x sec)']) || 0,
+        missed:    Number(inF['Unanswered inbound calls']) || 0,
+      };
+    });
+
+    // ---- Agent team map ----
+    const agentTeam = {};
+    if (teamRows.length > 0) {
+      const cols = Object.keys(teamRows[0]);
+      teamRows.forEach(r => {
+        cols.forEach(col => {
+          const name = String(r[col]||'').trim();
+          if (name) agentTeam[name] = col.replace(/\n/g,'').trim();
+        });
+      });
+    }
+
+    // ---- Call volumes map ----
+    const cvMap = {};
+    cvRows.forEach(r => {
+      const name = String(r['User']||'').trim();
+      if (name) cvMap[name] = r;
+    });
+
+    // ---- Zendesk map ----
+    const zdMap = {};
+    zdRows.forEach(r => {
+      const name = String(r['Agent name']||'').trim();
+      if (!name) return;
+      if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
+      zdMap[name].internal += Number(r['Internal comments']) || 0;
+      zdMap[name].public   += Number(r['Public comments'])   || 0;
+      zdMap[name].solved   += Number(r['Tickets solved'])    || 0;
+    });
+
+    // ---- AI summaries map ----
+    const aiMap = {};
+    aiRows.forEach(r => {
+      const name = String(r['Agent name']||'').trim();
+      if (name) aiMap[name] = String(r['Summary']||'');
+    });
+
+    // ---- Agent stats aggregation ----
+    const agentAgg = {};
+    agentStatsRows.forEach(r => {
+      const name = String(r['Agent Name']||'').trim();
+      if (!name) return;
+      if (!agentAgg[name]) agentAgg[name] = {};
+      const agg = agentAgg[name];
+      const addSec = (key, col) => { agg[key] = (agg[key]||0) + parseTimeSec(r[col]); };
+      addSec('available',       'Available');
+      addSec('in_call',         'In call');
+      addSec('after_call_work', 'After Call Work');
+      addSec('on_a_break',      'On break');
+      addSec('out_for_lunch',   'Out for lunch');
+      addSec('in_training',     'In training');
+      addSec('doing_back_office','Back Office');
+      addSec('do_not_disturb',  'Do not disturb');
+    });
+
+    // ---- Build agent list ----
+    const maxCallSec = Object.values(agentAgg).reduce((m,a) => Math.max(m,a.in_call||0), 0);
+    const agents = Object.entries(agentAgg).map(([name, s]) => {
+      const cv  = cvMap[name] || null;
+      const zd  = zdMap[name] || null;
+      const ai  = aiMap[name] || null;
+      const inb = cv ? (Number(cv['Answered inbound calls']||cv['Answered inbound']||0)) : 0;
+      const out = cv ? (Number(cv['Connected outbound calls']||cv['Connected outbound']||0)) : 0;
+      const gs  = k => s[k] || 0;
+      const allowedAcw    = (inb + out) * 180;
+      const investigation = (out * 60) + (inb * 30);
+      const excessAcw     = Math.max(0, gs('after_call_work') - allowedAcw);
+      const callProd      = Math.max(0,
+          gs('in_call') + Math.min(gs('after_call_work'), allowedAcw) + investigation + gs('doing_back_office') + gs('in_training') - excessAcw);
+      const comments  = zd ? (zd.internal + zd.public) : 0;
+      const zdProd    = comments * COMMENT_TIME;
+      const callUtil  = Math.min(Math.round(callProd / CONTRACTED_SECS * 100), 100);
+      const zdUtil    = Math.min(Math.round(zdProd   / CONTRACTED_SECS * 100), 100);
+      const activeSecs = gs('available') + gs('in_call') + gs('after_call_work') + gs('doing_back_office') + gs('in_training') + gs('do_not_disturb');
+      const partWeek  = activeSecs < 90000;
+      const team = agentTeam[name] || '—';
+      return { name, team, excess_acw:excessAcw, available:gs('available'), in_call:gs('in_call'),
+               after_call_work:gs('after_call_work'), allowed_acw:allowedAcw, investigation,
+               doing_back_office:gs('doing_back_office'), in_training:gs('in_training'),
+               out_for_lunch:gs('out_for_lunch'), on_a_break:gs('on_a_break'),
+               inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai, maxCallSec };
+    }).sort((a,b) => (b.callUtil+b.zdUtil) - (a.callUtil+a.zdUtil));
+
+    // Get current week from agent stats
+    const weekNum = agentStatsRows.length > 0 ? (agentStatsRows[0]['Week'] || '—') : '—';
+
+    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum };
+
+    // Build heatmaps from in sheets
+    const heatSheets = {
+      support: supportIn, onboarding: onboardIn, risk: riskIn,
+      keyaccounts: keyIn, smartbook: smartIn
+    };
+    Object.entries(heatSheets).forEach(([key, rows]) => {
+      const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
+      rows.forEach(r => {
+        const hr = Number(r['Hour']); if (!hr) return;
+        hm.Mon.push({hr,v:Number(r['Monday'])||0});
+        hm.Tue.push({hr,v:Number(r['Tuesday'])||0});
+        hm.Wed.push({hr,v:Number(r['Wednesday'])||0});
+        hm.Thu.push({hr,v:Number(r['Thursday'])||0});
+        hm.Fri.push({hr,v:Number(r['Friday'])||0});
+      });
+      globalData.heatmaps[key] = hm;
+    });
+
+    renderDashboard();
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+
+  } catch(e) {
+    document.getElementById('loadingScreen').innerHTML = `<div class="error-box">Failed to load data: ${e.message}<br><small>Make sure you are signed into SharePoint and the dashboard file has access permissions.</small></div>`;
+    console.error(e);
+  }
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function renderDashboard() {
+  const { totals, dayOrder, dayData, teamSummary, agents, cbRows, weekNum } = globalData;
+
+  document.getElementById('weekBadge').textContent = 'Week ' + weekNum;
+
+  // Metrics
+  const mp = v => totals.total > 0 ? ((v/totals.total)*100).toFixed(1)+'% of total' : '—';
+  document.getElementById('mTotal').textContent    = totals.total.toLocaleString();
+  document.getElementById('mMissed').textContent   = totals.missed.toLocaleString();
+  document.getElementById('mMissedPct').textContent= totals.total > 0 ? ((totals.missed/totals.total)*100).toFixed(1)+'% of total' : '—';
+  document.getElementById('mInbound').textContent  = totals.inbound.toLocaleString();
+  document.getElementById('mInboundPct').textContent = mp(totals.inbound);
+  document.getElementById('mOutbound').textContent = totals.outbound.toLocaleString();
+  document.getElementById('mOutboundPct').textContent = mp(totals.outbound);
+
+  // Team cards
+  const TC = {support:'#1d4ed8',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',keyaccounts:'#be185d',smartbook:'#374151'};
+  document.getElementById('teamGrid').innerHTML = teamSummary.map(t => {
+    const tc = TC[t.key]||'#888';
+    const ac = t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
+    return `<div class="team-card">
+      <div class="tc-name" style="color:${tc}">${t.label}</div>
+      <div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div>
+      <div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div>
+      <div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div>
+      <div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div>
+      <div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div>
+      <div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div>
+      <div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div>
+    </div>`;
+  }).join('');
+
+  // Charts
+  if (charts.day) charts.day.destroy();
+  if (charts.answer) charts.answer.destroy();
+  if (charts.outbound) charts.outbound.destroy();
+
+  charts.day = new Chart(document.getElementById('dayChart'), {
+    type:'bar', data:{
+      labels: dayOrder.map(d=>d.slice(0,3)),
+      datasets:[
+        {label:'Inbound', data:dayOrder.map(d=>dayData.inbound[d]||0), backgroundColor:'#3b82f6'},
+        {label:'Outbound',data:dayOrder.map(d=>dayData.outbound[d]||0),backgroundColor:'#15803d'},
+        {label:'Missed',  data:dayOrder.map(d=>dayData.missed[d]||0),  backgroundColor:'#dc2626'},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(0,0,0,.05)'}}}}
+  });
+
+  charts.answer = new Chart(document.getElementById('answerChart'), {
+    type:'bar', data:{
+      labels: teamSummary.map(t=>t.label),
+      datasets:[{label:'Answer %', data:teamSummary.map(t=>t.answerPct),
+        backgroundColor:teamSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626')}]
+    },
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'}},y:{grid:{display:false}}}}
+  });
+
+  charts.outbound = new Chart(document.getElementById('outboundChart'), {
+    type:'bar', data:{
+      labels: teamSummary.map(t=>t.label),
+      datasets:[{label:'Connected %',data:teamSummary.map(t=>t.connPct),backgroundColor:'#1d4ed8'}]
+    },
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'}},y:{grid:{display:false}}}}
+  });
+
+  // Heatmap
+  renderHeatmap(currentHeatTeam);
+
+  // Agent table
+  renderAgents(currentAgentTeam);
+
+  // Callbacks
+  const cbHtml = cbRows.length > 0
+    ? cbRows.map(r => `<tr>
+        <td class="l">${r['Week']||'—'}</td>
+        <td class="l">${r['Callback requests received']||'—'}</td>
+        <td class="l">${r['Called back']||'—'}</td>
+        <td class="l">${r['Not actioned']||'—'}</td>
+        <td class="l">${r['Rate %']||'—'}</td>
+        <td class="l">${r['Avg pending time (mins)']||'—'}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
+  document.getElementById('cbBody').innerHTML = cbHtml;
+
+  // Tab listeners
+  document.getElementById('heatTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    document.querySelectorAll('#heatTabs .tab').forEach(t=>t.classList.remove('active'));
+    btn.classList.add('active');
+    currentHeatTeam = btn.dataset.team;
+    renderHeatmap(currentHeatTeam);
+  });
+
+  document.getElementById('agentTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    document.querySelectorAll('#agentTabs .tab').forEach(t=>t.classList.remove('active'));
+    btn.classList.add('active');
+    currentAgentTeam = btn.dataset.team;
+    renderAgents(currentAgentTeam);
+  });
+
+  initTooltip();
+}
+
+function renderHeatmap(team) {
+  const td = globalData.heatmaps[team]; if (!td) return;
+  const wkdays = ['Mon','Tue','Wed','Thu','Fri'];
+  const hours  = [8,9,10,11,12,13,14,15,16,17];
+  const hourLabels = ['8am','9am','10am','11am','12pm','1pm','2pm','3pm','4pm','5pm'];
+  let max = 0;
+  wkdays.forEach(d => (td[d]||[]).forEach(p => { if(p.v>max) max=p.v; }));
+  const grid = document.getElementById('heatmap');
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = '44px repeat(5,1fr)';
+  const h0 = document.createElement('div'); h0.className='heat-head'; grid.appendChild(h0);
+  wkdays.forEach(d => { const h=document.createElement('div');h.className='heat-head';h.textContent=d;grid.appendChild(h); });
+  hours.forEach((hr,i) => {
+    const lbl=document.createElement('div');lbl.className='heat-cell';lbl.textContent=hourLabels[i];lbl.style.color='var(--muted)';grid.appendChild(lbl);
+    wkdays.forEach(day => {
+      const pts = td[day]||[]; let pt = null;
+      for(let k=0;k<pts.length;k++){if(pts[k].hr===hr){pt=pts[k];break;}}
+      if(!pt) pt={v:0};
+      const pct = max>0?pt.v/max:0;
+      const cell=document.createElement('div');cell.className='heat-cell';
+      cell.style.background=`rgba(29,78,216,${0.08+pct*0.85})`;
+      cell.style.color=pct>0.5?'#fff':'var(--muted)';
+      cell.textContent=pt.v>0?pt.v:'';
+      grid.appendChild(cell);
+    });
+  });
+}
+
+function renderAgents(team) {
+  const { agents } = globalData;
+  const maxCallSec = agents.reduce((m,a) => Math.max(m,a.in_call||0), 0);
+  const list = team === 'all' ? agents : agents.filter(a => a.team === team);
+  const seen = {};
+  const rows = list.filter(a => { if(seen[a.name]) return false; seen[a.name]=true; return true; });
+
+  document.getElementById('agentBody').innerHTML = rows.map(a => {
+    const tc = TEAM_COLORS[a.team]||'#888';
+    const sh = TEAM_SHORT[a.team]||a.team;
+    const bw = maxCallSec>0?Math.round(a.in_call/maxCallSec*40):0;
+    const cs = scoreStyle(a.callUtil);
+    const zs = scoreStyle(a.zdUtil);
+    const pw = a.partWeek ? '<span class="wp">part wk</span>' : '';
+    const exCell = a.excess_acw>0
+      ? `<td style="color:var(--red)">${fmtHrs(a.excess_acw)}<span class="excess-pill">−${fmtHrs(a.excess_acw)}</span></td>`
+      : '<td class="muted">—</td>';
+    const ls = a.out_for_lunch||0;
+    const lDisp = ls>0?(Math.round(ls/360)/10)+'h':'—';
+    const lCell = `<td style="color:var(--amber)">${lDisp} ${lunchFlag(ls,a.partWeek)}</td>`;
+    const cv = a.cv; const zd = a.zd;
+    const cvC = cv
+      ? `<td>${dv(cv['Answered inbound calls']||cv['Answered inbound'])}</td><td>${dv(cv['Connected outbound calls']||cv['Connected outbound'])}</td><td>${dv(cv['Outbound calls']||cv['Outbound'])}</td>`
+      : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
+    const zdC = zd
+      ? `<td>${dv(zd.internal)}</td><td>${dv(zd.public)}</td><td style="font-weight:600;color:${zd.solved>0?'var(--keyaccts)':'var(--subtle)'}">${zd.solved||'—'}</td>`
+      : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
+    const hasAi = a.ai ? 'has-summary' : '';
+    return `<tr class="${hasAi}" data-agent="${a.name.replace(/"/g,'&quot;')}">
+      <td class="l" style="font-weight:500">${a.name}${pw}</td>
+      <td class="l"><span class="team-pill" style="background:${tc}18;color:${tc}">${sh}</span></td>
+      <td>${fh(fmtHrs(a.available))}</td>
+      <td><span class="bar-mini" style="width:${bw}px"></span>${fh(fmtHrs(a.in_call))}</td>
+      <td>${fh(fmtHrs(a.after_call_work))}</td>
+      <td style="color:var(--subtle);font-size:10px">${fh(fmtHrs(a.allowed_acw))}</td>
+      ${exCell}
+      <td>${fh(fmtHrs(a.investigation))}</td>
+      <td>${fh(fmtHrs(a.doing_back_office))}</td>
+      <td>${fh(fmtHrs(a.in_training))}</td>
+      ${lCell}
+      ${cvC}${zdC}
+      <td><span class="score-pill" style="background:${cs.bg};color:${cs.col}">${a.callUtil}%</span></td>
+      <td><span class="score-pill" style="background:${zs.bg};color:${zs.col}">${a.zdUtil}%</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// AI TOOLTIP
+// ============================================================
+function initTooltip() {
+  const tooltip = document.getElementById('aiTooltip');
+  const tooltipText = document.getElementById('aiTooltipText');
+  const aiMap = {};
+  globalData.agents.forEach(a => { if(a.ai) aiMap[a.name] = a.ai; });
+
+  document.getElementById('agentBody').addEventListener('mouseover', e => {
+    const row = e.target.closest('tr.has-summary'); if (!row) return;
+    const name = row.dataset.agent;
+    if (!aiMap[name]) return;
+    tooltipText.textContent = aiMap[name];
+    tooltip.classList.add('visible');
+  });
+
+  document.getElementById('agentBody').addEventListener('mousemove', e => {
+    tooltip.style.left = (e.clientX + 16) + 'px';
+    tooltip.style.top  = Math.min(e.clientY - 10, window.innerHeight - 140) + 'px';
+  });
+
+  document.getElementById('agentBody').addEventListener('mouseout', e => {
+    if (!e.target.closest('tr.has-summary')) tooltip.classList.remove('visible');
+  });
+}
+
+// ============================================================
+// INIT
+// ============================================================
+loadDashboard();
+</script>
+</body>
+</html>
