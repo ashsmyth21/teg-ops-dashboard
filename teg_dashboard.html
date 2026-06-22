@@ -744,39 +744,24 @@ function renderAgents(team) {
       outbound: sp.outbound + rv.outbound,
       connOut:  sp.connOut  + rv.connOut,
     };
-    const cell = (label, color, vals) => `<td colspan="1" style="text-align:left;padding:4px 8px">
-      <span style="font-size:10px;font-weight:600;color:${color};display:block;margin-bottom:1px">${label}</span>
-      <span style="font-size:11px;color:var(--text)">In: <b>${vals.inbound}</b> &nbsp; Ans: <b>${vals.answered}</b> &nbsp; Missed: <b style="color:var(--red)">${vals.missed}</b> &nbsp; Out: <b>${vals.outbound}</b> &nbsp; Conn: <b>${vals.connOut}</b></span>
-    </td>`;
-    summaryRowHtml = `<tr style="background:#f8faff;border-bottom:2px solid var(--border)">
-      <td class="l col-agent" style="font-weight:600;font-size:11px;color:var(--muted);padding:6px 8px" colspan="1">Team totals</td>
-      <td class="l col-team"></td>
-      ${cell('Support', '#1d4ed8', sp)}
-      <td colspan="15" style="padding:4px 8px">
-        <div style="display:flex;gap:24px;align-items:center">
-          <span style="font-size:10px;font-weight:600;color:#1d4ed8">SUPPORT &nbsp;
-            In: <span style="font-weight:700">${sp.inbound}</span> &nbsp;
-            Ans: <span style="font-weight:700">${sp.answered}</span> &nbsp;
-            Missed: <span style="font-weight:700;color:var(--red)">${sp.missed}</span> &nbsp;
-            Out: <span style="font-weight:700">${sp.outbound}</span> &nbsp;
-            Conn: <span style="font-weight:700">${sp.connOut}</span>
-          </span>
-          <span style="color:var(--border)">|</span>
-          <span style="font-size:10px;font-weight:600;color:#0e7490">REVERED &nbsp;
-            In: <span style="font-weight:700">${rv.inbound}</span> &nbsp;
-            Ans: <span style="font-weight:700">${rv.answered}</span> &nbsp;
-            Missed: <span style="font-weight:700;color:var(--red)">${rv.missed}</span> &nbsp;
-            Out: <span style="font-weight:700">${rv.outbound}</span> &nbsp;
-            Conn: <span style="font-weight:700">${rv.connOut}</span>
-          </span>
-          <span style="color:var(--border)">|</span>
-          <span style="font-size:10px;font-weight:600;color:var(--muted)">TOTAL &nbsp;
-            In: <span style="font-weight:700">${total.inbound}</span> &nbsp;
-            Ans: <span style="font-weight:700">${total.answered}</span> &nbsp;
-            Missed: <span style="font-weight:700;color:var(--red)">${total.missed}</span> &nbsp;
-            Out: <span style="font-weight:700">${total.outbound}</span> &nbsp;
-            Conn: <span style="font-weight:700">${total.connOut}</span>
-          </span>
+    const seg = (label, color, vals) =>
+      `<span style="display:inline-flex;flex-direction:column;gap:1px;padding:4px 12px;border-right:1px solid var(--border)">
+        <span style="font-size:9px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.06em">${label}</span>
+        <span style="font-size:11px;color:var(--text);white-space:nowrap">
+          In: <b>${vals.inbound}</b> &nbsp;
+          Ans: <b style="color:var(--green)">${vals.answered}</b> &nbsp;
+          Missed: <b style="color:var(--red)">${vals.missed}</b> &nbsp;
+          Out: <b>${vals.outbound}</b> &nbsp;
+          Conn: <b>${vals.connOut}</b>
+        </span>
+      </span>`;
+    summaryRowHtml = `<tr style="background:#f0f6ff;border-bottom:2px solid var(--border)">
+      <td class="l col-agent" style="font-weight:600;font-size:10px;color:var(--muted);white-space:nowrap">Team totals</td>
+      <td colspan="17" style="padding:0">
+        <div style="display:inline-flex;align-items:stretch">
+          ${seg('Support', '#1d4ed8', sp)}
+          ${seg('Revered', '#0e7490', rv)}
+          ${seg('Combined', '#374151', total)}
         </div>
       </td>
     </tr>`;
