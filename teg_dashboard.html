@@ -265,14 +265,45 @@ async function getToken() {
 // ============================================================
 // GRAPH API HELPERS
 // ============================================================
+let _driveId = null;
+let _siteId = null;
+
+async function getFileEndpoint() {
+  if (_driveId && _siteId) return `https://graph.microsoft.com/v1.0/drives/${_driveId}/items/${FILE_ID}`;
+  
+  const token = await getToken();
+  
+  // Get site ID
+  const siteResp = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/transportexchange.sharepoint.com:/sites/TEGOperationsSharePoint`,
+    { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } }
+  );
+  const siteData = await siteResp.json();
+  _siteId = siteData.id;
+  
+  // Get drives
+  const drivesResp = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${_siteId}/drives`,
+    { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } }
+  );
+  const drivesData = await drivesResp.json();
+  // Pick the first drive (Documents)
+  _driveId = drivesData.value[0].id;
+  
+  return `https://graph.microsoft.com/v1.0/drives/${_driveId}/items/${FILE_ID}`;
+}
+
 async function readSheet(sheetName) {
   try {
     const token = await getToken();
-    console.log('Token for', sheetName, ':', token ? 'present ('+token.substring(0,20)+'...)' : 'NULL');
     if (!token) return [];
-    const url = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/drives/root:/Training%20%20SOPs/2nd%20Line%20SOPs/Aircall_Dashboard_Buffer.xlsx.xlsx:/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
+    const base = await getFileEndpoint();
+    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
     const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
-    if (!resp.ok) return [];
+    if (!resp.ok) {
+      console.error('Sheet error', sheetName, resp.status, await resp.text());
+      return [];
+    }
     const data = await resp.json();
     if (!data.values || data.values.length < 2) return [];
     const headers = data.values[0];
@@ -281,7 +312,7 @@ async function readSheet(sheetName) {
       headers.forEach((h, i) => { obj[String(h)] = row[i]; });
       return obj;
     });
-  } catch(e) { return []; }
+  } catch(e) { console.error('readSheet error', sheetName, e); return []; }
 }
 
 // ============================================================
