@@ -201,7 +201,8 @@ tr.has-summary:hover td{background:#f8faff}
 // CONFIG
 // ============================================================
 const SITE_ID = 'TEGOperationsSharePoint';
-const FILE_ID = 'B1A6CDCA-C01C-4D6C-B47B-EE0BFE1B3A38';
+const FILE_ID = '016CEQCFOKZWTLCHGANRG3I67OBP7BWORY';
+const DRIVE_ID = 'b!eDxumJg2N0KTjySMKpu46bIUk2gwX7pOpP6Skm7rAYgPI0Pr1eS-RK80J7QDBAL4';
 const TENANT  = 'transportexchange';
 const CONTRACTED_SECS = 135000;
 const COMMENT_TIME    = 180;
@@ -269,28 +270,7 @@ let _driveId = null;
 let _siteId = null;
 
 async function getFileEndpoint() {
-  if (_driveId && _siteId) return `https://graph.microsoft.com/v1.0/drives/${_driveId}/items/${FILE_ID}`;
-  
-  const token = await getToken();
-  
-  // Get site ID
-  const siteResp = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/transportexchange.sharepoint.com:/sites/TEGOperationsSharePoint`,
-    { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } }
-  );
-  const siteData = await siteResp.json();
-  _siteId = siteData.id;
-  
-  // Get drives
-  const drivesResp = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${_siteId}/drives`,
-    { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } }
-  );
-  const drivesData = await drivesResp.json();
-  // Pick the first drive (Documents)
-  _driveId = drivesData.value[0].id;
-  
-  return `https://graph.microsoft.com/v1.0/drives/${_driveId}/items/${FILE_ID}`;
+  return `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}`;
 }
 
 async function readSheet(sheetName) {
@@ -739,7 +719,13 @@ function initTooltip() {
   globalData.agents.forEach(a => { if(a.ai) aiMap[a.name] = a.ai; });
 
   document.getElementById('agentBody').addEventListener('mouseover', e => {
-    const row = e.target.closest('tr.has-summary'); if (!row) return;
+    const cell = e.target.closest('td.l');
+    if (!cell) { tooltip.classList.remove('visible'); return; }
+    const row = cell.closest('tr.has-summary');
+    if (!row) { tooltip.classList.remove('visible'); return; }
+    // Only show on first cell (agent name)
+    const cells = row.querySelectorAll('td');
+    if (cells[0] !== cell) { tooltip.classList.remove('visible'); return; }
     const name = row.dataset.agent;
     if (!aiMap[name]) return;
     tooltipText.textContent = aiMap[name];
@@ -747,12 +733,14 @@ function initTooltip() {
   });
 
   document.getElementById('agentBody').addEventListener('mousemove', e => {
-    tooltip.style.left = (e.clientX + 16) + 'px';
-    tooltip.style.top  = Math.min(e.clientY - 10, window.innerHeight - 140) + 'px';
+    if (tooltip.classList.contains('visible')) {
+      tooltip.style.left = (e.clientX + 16) + 'px';
+      tooltip.style.top  = Math.min(e.clientY - 10, window.innerHeight - 140) + 'px';
+    }
   });
 
   document.getElementById('agentBody').addEventListener('mouseout', e => {
-    if (!e.target.closest('tr.has-summary')) tooltip.classList.remove('visible');
+    tooltip.classList.remove('visible');
   });
 }
 
