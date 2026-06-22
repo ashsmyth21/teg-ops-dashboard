@@ -532,7 +532,24 @@ async function loadDashboard() {
 
     const weekNum = agentStatsRows.length > 0 ? (agentStatsRows[0]['Week'] || '—') : '—';
 
-    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum };
+    // Build Support + Revered sub-team summary
+    const extractTeamSummary = (inR, outR) => {
+      const inF  = inR[0]  || {};
+      const outF = outR[0] || {};
+      return {
+        inbound:  Number(inF['Inbound calls'])   || 0,
+        answered: Number(inF['Answered inbound']) || 0,
+        missed:   Number(inF['Unanswered inbound calls']) || 0,
+        outbound: Number(outF['Outbound calls'])  || 0,
+        connOut:  Number(outF['Outbound calls (connected calls > x sec)']) || 0,
+      };
+    };
+    const supportRevSplit = {
+      support: extractTeamSummary(supportIn, supportOut),
+      revered: extractTeamSummary(reveredIn, reveredOut),
+    };
+
+    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit };
 
     // Build heatmaps
     const heatSheets = {
@@ -715,7 +732,57 @@ function renderAgents(team) {
   const seen = {};
   const rows = list.filter(a => { if(seen[a.name]) return false; seen[a.name]=true; return true; });
 
-  document.getElementById('agentBody').innerHTML = rows.map(a => {
+  // Summary split row for Support + Revered
+  let summaryRowHtml = '';
+  if (team === 'Support + Revered' && globalData.supportRevSplit) {
+    const sp = globalData.supportRevSplit.support;
+    const rv = globalData.supportRevSplit.revered;
+    const total = {
+      inbound:  sp.inbound  + rv.inbound,
+      answered: sp.answered + rv.answered,
+      missed:   sp.missed   + rv.missed,
+      outbound: sp.outbound + rv.outbound,
+      connOut:  sp.connOut  + rv.connOut,
+    };
+    const cell = (label, color, vals) => `<td colspan="1" style="text-align:left;padding:4px 8px">
+      <span style="font-size:10px;font-weight:600;color:${color};display:block;margin-bottom:1px">${label}</span>
+      <span style="font-size:11px;color:var(--text)">In: <b>${vals.inbound}</b> &nbsp; Ans: <b>${vals.answered}</b> &nbsp; Missed: <b style="color:var(--red)">${vals.missed}</b> &nbsp; Out: <b>${vals.outbound}</b> &nbsp; Conn: <b>${vals.connOut}</b></span>
+    </td>`;
+    summaryRowHtml = `<tr style="background:#f8faff;border-bottom:2px solid var(--border)">
+      <td class="l col-agent" style="font-weight:600;font-size:11px;color:var(--muted);padding:6px 8px" colspan="1">Team totals</td>
+      <td class="l col-team"></td>
+      ${cell('Support', '#1d4ed8', sp)}
+      <td colspan="15" style="padding:4px 8px">
+        <div style="display:flex;gap:24px;align-items:center">
+          <span style="font-size:10px;font-weight:600;color:#1d4ed8">SUPPORT &nbsp;
+            In: <span style="font-weight:700">${sp.inbound}</span> &nbsp;
+            Ans: <span style="font-weight:700">${sp.answered}</span> &nbsp;
+            Missed: <span style="font-weight:700;color:var(--red)">${sp.missed}</span> &nbsp;
+            Out: <span style="font-weight:700">${sp.outbound}</span> &nbsp;
+            Conn: <span style="font-weight:700">${sp.connOut}</span>
+          </span>
+          <span style="color:var(--border)">|</span>
+          <span style="font-size:10px;font-weight:600;color:#0e7490">REVERED &nbsp;
+            In: <span style="font-weight:700">${rv.inbound}</span> &nbsp;
+            Ans: <span style="font-weight:700">${rv.answered}</span> &nbsp;
+            Missed: <span style="font-weight:700;color:var(--red)">${rv.missed}</span> &nbsp;
+            Out: <span style="font-weight:700">${rv.outbound}</span> &nbsp;
+            Conn: <span style="font-weight:700">${rv.connOut}</span>
+          </span>
+          <span style="color:var(--border)">|</span>
+          <span style="font-size:10px;font-weight:600;color:var(--muted)">TOTAL &nbsp;
+            In: <span style="font-weight:700">${total.inbound}</span> &nbsp;
+            Ans: <span style="font-weight:700">${total.answered}</span> &nbsp;
+            Missed: <span style="font-weight:700;color:var(--red)">${total.missed}</span> &nbsp;
+            Out: <span style="font-weight:700">${total.outbound}</span> &nbsp;
+            Conn: <span style="font-weight:700">${total.connOut}</span>
+          </span>
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  document.getElementById('agentBody').innerHTML = summaryRowHtml + rows.map(a => {
     const tc = TEAM_COLORS[a.team]||'#888';
     const sh = TEAM_SHORT[a.team]||a.team;
     const bw = maxCallSec>0?Math.round(a.in_call/maxCallSec*40):0;
