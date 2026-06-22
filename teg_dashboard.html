@@ -391,7 +391,7 @@ async function loadDashboard() {
       readSheet('2nd line zendesk ticket action'),
       readSheet('ai summaries'),
       readSheet('call back data'),
-      readSheet('agents in what team'),
+      readSheet('cfg_agents '),
       readSheet('Support data inbound'),
       readSheet('Support outbound'),
       readSheet('Revered data inbound'),
@@ -453,8 +453,8 @@ async function loadDashboard() {
     // ---- Agent team map from cfg_agents ----
     const agentTeam = {};
     teamRows.forEach(r => {
-      const name = String(r['Agent Name'] || r['agent_name'] || r['Name'] || '').trim();
-      const team = String(r['Team'] || r['team'] || '').trim();
+      const name = String(r['agent_name'] || '').trim();
+      const team = String(r['team'] || '').trim();
       if (name && team) agentTeam[name] = team;
     });
 
