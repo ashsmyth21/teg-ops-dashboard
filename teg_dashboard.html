@@ -352,7 +352,7 @@ async function loadDashboard() {
       readSheet('zendesk ticket activity'),
       readSheet('ai summaries'),
       readSheet('call back data'),
-      readSheet('agents in what team'),
+      readSheet('cfg_agents'),
       readSheet('Support data inbound'), readSheet('Revered data inbound'),
       readSheet('Onboparding data inbound'),
       readSheet('Risk data inbound'),
@@ -409,17 +409,13 @@ async function loadDashboard() {
       };
     });
 
-    // ---- Agent team map ----
+    // ---- Agent team map from cfg_agents ----
     const agentTeam = {};
-    if (teamRows.length > 0) {
-      const cols = Object.keys(teamRows[0]);
-      teamRows.forEach(r => {
-        cols.forEach(col => {
-          const name = String(r[col]||'').trim();
-          if (name) agentTeam[name] = col.replace(/\n/g,'').trim();
-        });
-      });
-    }
+    teamRows.forEach(r => {
+      const name = String(r['agent_name'] || '').trim();
+      const team = String(r['team'] || '').trim();
+      if (name && team) agentTeam[name] = team;
+    });
 
     // ---- Call volumes map ----
     const cvMap = {};
