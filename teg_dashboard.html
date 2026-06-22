@@ -737,13 +737,20 @@ function renderAgents(team) {
   if (team === 'Support + Revered' && globalData.supportRevSplit) {
     const sp = globalData.supportRevSplit.support;
     const rv = globalData.supportRevSplit.revered;
+    // Outbound from agent-level call volumes (not team sheets - avoids attribution gap)
+    const agentOutbound  = rows.reduce((s,a) => s + (a.cv ? (Number(a.cv['Outbound calls']||a.cv['Outbound']||0)) : 0), 0);
+    const agentConnOut   = rows.reduce((s,a) => s + (a.cv ? (Number(a.cv['Connected outbound calls']||a.cv['Connected outbound']||0)) : 0), 0);
     const total = {
       inbound:  sp.inbound  + rv.inbound,
       answered: sp.answered + rv.answered,
       missed:   sp.missed   + rv.missed,
-      outbound: sp.outbound + rv.outbound,
-      connOut:  sp.connOut  + rv.connOut,
+      outbound: agentOutbound,
+      connOut:  agentConnOut,
     };
+    // Override sp/rv outbound with agent-level too (team sheets miss main line outbound)
+    sp.outbound = rows.filter(a => a.team === 'Support + Revered').reduce((s,a) => s + (a.cv ? (Number(a.cv['Outbound calls']||a.cv['Outbound']||0)) : 0), 0);
+    sp.connOut  = rows.filter(a => a.team === 'Support + Revered').reduce((s,a) => s + (a.cv ? (Number(a.cv['Connected outbound calls']||a.cv['Connected outbound']||0)) : 0), 0);
+    rv.outbound = 0; rv.connOut = 0; // all in same team bucket until cfg_agents split
     const seg = (label, color, vals) =>
       `<div style="display:flex;flex-direction:column;gap:2px;padding:6px 16px;border-right:1px solid var(--border)">
         <span style="font-size:9px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.06em">${label}</span>
@@ -756,9 +763,8 @@ function renderAgents(team) {
         </span>
       </div>`;
     summaryRowHtml = `<tr style="background:#f0f6ff;border-bottom:2px solid #c7d7f8">
-      <td class="l col-agent" style="font-weight:600;font-size:10px;color:var(--muted);white-space:nowrap;vertical-align:middle;background:#f0f6ff">Team totals</td>
-      <td colspan="18" style="padding:0;background:#f0f6ff">
-        <div style="display:flex;align-items:stretch;height:100%">
+      <td colspan="19" style="padding:0;background:#f0f6ff">
+        <div style="display:flex;align-items:stretch;justify-content:center;gap:0">
           ${seg('Support', '#1d4ed8', sp)}
           ${seg('Revered', '#0e7490', rv)}
           ${seg('Combined', '#374151', total)}
