@@ -234,28 +234,32 @@ const msalConfig = {
 
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 const SCOPES = ['https://graph.microsoft.com/Files.Read.All', 'https://graph.microsoft.com/Sites.Read.All'];
+let _token = null;
 
-async function getToken() {
+async function initAuth() {
   await msalInstance.initialize();
-
-  // Handle redirect response if returning from login
-  await msalInstance.handleRedirectPromise();
-
+  const redirectResult = await msalInstance.handleRedirectPromise();
+  if (redirectResult) {
+    _token = redirectResult.accessToken;
+    return true;
+  }
   const accounts = msalInstance.getAllAccounts();
   if (accounts.length === 0) {
-    // No signed-in user — trigger login redirect
     await msalInstance.loginRedirect({ scopes: SCOPES });
-    return null;
+    return false;
   }
-
   try {
     const result = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account: accounts[0] });
-    return result.accessToken;
+    _token = result.accessToken;
+    return true;
   } catch (e) {
-    // Silent token acquisition failed — trigger interactive login
     await msalInstance.acquireTokenRedirect({ scopes: SCOPES, account: accounts[0] });
-    return null;
+    return false;
   }
+}
+
+async function getToken() {
+  return _token;
 }
 
 // ============================================================
@@ -264,8 +268,9 @@ async function getToken() {
 async function readSheet(sheetName) {
   try {
     const token = await getToken();
+    console.log('Token for', sheetName, ':', token ? 'present ('+token.substring(0,20)+'...)' : 'NULL');
     if (!token) return [];
-    const url = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/drives/root:/Training/SOPs/2nd%20Line%20SOPs/Aircall_Dashboard_Buffer.xlsx.xlsx:/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/drives/root:/Training%20%20SOPs/2nd%20Line%20SOPs/Aircall_Dashboard_Buffer.xlsx.xlsx:/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
     const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
     if (!resp.ok) return [];
     const data = await resp.json();
@@ -723,7 +728,7 @@ function initTooltip() {
 // ============================================================
 // INIT
 // ============================================================
-loadDashboard();
+initAuth().then(ready => { if (ready) loadDashboard(); });
 </script>
 </body>
 </html>
