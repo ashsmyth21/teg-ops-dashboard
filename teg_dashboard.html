@@ -33,7 +33,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .metric-card .lbl{font-size:11px;color:var(--muted);margin-bottom:2px}
 .metric-card .val{font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
 .metric-card .sub{font-size:11px;color:var(--subtle);margin-top:3px}
-.team-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:4px}
+.team-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:4px}
 .team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
 .team-card .tc-name{font-size:11px;font-weight:600;margin-bottom:8px}
 .team-card .tc-row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px}
@@ -124,6 +124,7 @@ tr.has-summary:hover td{background:#f8faff}
     <div class="section-label">Inbound calls by hour — weekdays</div>
     <div class="tabs" id="heatTabs">
       <button class="tab active" data-team="support">Support</button>
+      <button class="tab" data-team="revered">Revered</button>
       <button class="tab" data-team="onboarding">Onboarding</button>
       <button class="tab" data-team="risk">Risk</button>
       <button class="tab" data-team="keyaccounts">Key accounts</button>
@@ -134,7 +135,8 @@ tr.has-summary:hover td{background:#f8faff}
     <div class="section-label">Agent master report</div>
     <div class="tabs" id="agentTabs">
       <button class="tab active" data-team="all">All teams</button>
-      <button class="tab" data-team="Support + Revered">Support</button>
+      <button class="tab" data-team="Support">Support</button>
+      <button class="tab" data-team="Revered">Revered</button>
       <button class="tab" data-team="Onboarding">Onboarding</button>
       <button class="tab" data-team="Risk and compliance">Risk</button>
       <button class="tab" data-team="Key Accounts VIP Response Team">Key accounts</button>
@@ -206,12 +208,12 @@ const LUNCH_TOLERANCE = 300;
 const BRIDGE_STATUSES = ['out_for_lunch','on_a_break'];
 
 const TEAM_COLORS = {
-  'Support + Revered':'#1d4ed8','Onboarding':'#15803d','Risk and compliance':'#b45309',
+  'Support':'#1d4ed8','Revered':'#0e7490','Onboarding':'#15803d','Risk and compliance':'#b45309',
   'Key Accounts VIP Response Team':'#be185d','Support - Credit Control':'#7c3aed',
   'Smartbook members':'#374151','2nd line (Tech support team)':'#c2410c',
 };
 const TEAM_SHORT = {
-  'Support + Revered':'Support','Onboarding':'Onboarding','Risk and compliance':'Risk',
+  'Support':'Support','Revered':'Revered','Onboarding':'Onboarding','Risk and compliance':'Risk',
   'Key Accounts VIP Response Team':'Key accts','Support - Credit Control':'Credit ctrl',
   'Smartbook members':'Smartbook','2nd line (Tech support team)':'2nd line',
 };
@@ -292,8 +294,8 @@ async function loadDashboard() {
     // Load all sheets in parallel
     const [companyRows, agentStatsRows, cvRows, zdRows, aiRows,
            cbRows, teamRows,
-           supportIn, onboardIn, riskIn, creditIn, keyIn, smartIn,
-           supportOut, onboardOut, riskOut, creditOut, keyOut, smartOut] = await Promise.all([
+           supportIn, reveredIn, onboardIn, riskIn, creditIn, keyIn, smartIn,
+           supportOut, reveredOut, onboardOut, riskOut, creditOut, keyOut, smartOut] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
       readSheet('call voumes '),
@@ -301,13 +303,13 @@ async function loadDashboard() {
       readSheet('ai summaries'),
       readSheet('call back data'),
       readSheet('agents in what team'),
-      readSheet('Support + Revered data inbound'),
+      readSheet('Support data inbound'), readSheet('Revered data inbound'),
       readSheet('Onboparding data inbound'),
       readSheet('Risk data inbound'),
       readSheet('Credit control inbound'),
       readSheet('Key accounts inbound'),
       readSheet('Smartbook inbound'),
-      readSheet('Support + Revered data outbound'),
+      readSheet('Support data outbound'), readSheet('Revered data outbound'),
       readSheet('Onboparding data outbound'),
       readSheet('Risk data outbound'),
       readSheet('Credit control outbound'),
@@ -335,6 +337,7 @@ async function loadDashboard() {
     // ---- Team summary ----
     const teamDefs = [
       { key:'support',     label:'Support',     inR:supportIn,   outR:supportOut  },
+      { key:'revered',     label:'Revered',     inR:reveredIn,   outR:reveredOut  },
       { key:'onboarding',  label:'Onboarding',  inR:onboardIn,   outR:onboardOut  },
       { key:'risk',        label:'Risk',        inR:riskIn,      outR:riskOut     },
       { key:'credit',      label:'Credit ctrl', inR:creditIn,    outR:creditOut   },
@@ -446,7 +449,7 @@ async function loadDashboard() {
 
     // Build heatmaps from in sheets
     const heatSheets = {
-      support: supportIn, onboarding: onboardIn, risk: riskIn,
+      support: supportIn, revered: reveredIn, onboarding: onboardIn, risk: riskIn,
       keyaccounts: keyIn, smartbook: smartIn
     };
     Object.entries(heatSheets).forEach(([key, rows]) => {
@@ -492,7 +495,7 @@ function renderDashboard() {
   document.getElementById('mOutboundPct').textContent = mp(totals.outbound);
 
   // Team cards
-  const TC = {support:'#1d4ed8',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',keyaccounts:'#be185d',smartbook:'#374151'};
+  const TC = {support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',keyaccounts:'#be185d',smartbook:'#374151'};
   document.getElementById('teamGrid').innerHTML = teamSummary.map(t => {
     const tc = TC[t.key]||'#888';
     const ac = t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
