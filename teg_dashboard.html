@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TEG Ops Dashboard</title>
-<script src="https://transportexchange.sharepoint.com/sites/TEGopsdashboard/Shared%20Documents/chart.umd.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="https://ashsmyth21.github.io/teg-ops-dashboard/chart.umd.min.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -220,20 +221,52 @@ const TEAM_SHORT = {
 };
 
 // ============================================================
-// GRAPH API HELPERS
+// MSAL AUTH
 // ============================================================
+const msalConfig = {
+  auth: {
+    clientId: '7059e381-7e87-49a8-9268-0a730ad100f7',
+    authority: 'https://login.microsoftonline.com/39c9cfa6-ac96-4804-a105-db8c03e1487d',
+    redirectUri: 'https://ashsmyth21.github.io/teg-ops-dashboard/teg_dashboard.html',
+  },
+  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+};
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+const SCOPES = ['https://graph.microsoft.com/Files.Read.All', 'https://graph.microsoft.com/Sites.Read.All'];
+
 async function getToken() {
-  // Try SharePoint/_api/contextinfo to get cookie-based token
-  // Since we're hosted in SharePoint, we can use fetch with credentials
-  return null; // credentials handled by cookies
+  await msalInstance.initialize();
+
+  // Handle redirect response if returning from login
+  await msalInstance.handleRedirectPromise();
+
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length === 0) {
+    // No signed-in user — trigger login redirect
+    await msalInstance.loginRedirect({ scopes: SCOPES });
+    return null;
+  }
+
+  try {
+    const result = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account: accounts[0] });
+    return result.accessToken;
+  } catch (e) {
+    // Silent token acquisition failed — trigger interactive login
+    await msalInstance.acquireTokenRedirect({ scopes: SCOPES, account: accounts[0] });
+    return null;
+  }
 }
 
-const BASE = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/drives`;
-
+// ============================================================
+// GRAPH API HELPERS
+// ============================================================
 async function readSheet(sheetName) {
   try {
+    const token = await getToken();
+    if (!token) return [];
     const url = `https://graph.microsoft.com/v1.0/sites/${TENANT}.sharepoint.com:/sites/TEGOperationsSharePoint:/items/${FILE_ID}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
-    const resp = await fetch(url, { credentials: 'include', headers: { 'Accept': 'application/json' } });
+    const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
     if (!resp.ok) return [];
     const data = await resp.json();
     if (!data.values || data.values.length < 2) return [];
