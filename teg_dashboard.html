@@ -62,6 +62,27 @@ td.l{text-align:left}
 .wp{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:600;background:var(--amber-light);color:var(--amber);margin-left:3px}
 .flag{display:inline-block;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:500;margin-left:2px}
 .muted{color:var(--subtle)}
+
+/* Section tooltips */
+.section-wrap{display:flex;align-items:center;gap:6px;margin:20px 0 10px}
+.section-wrap .section-label{margin:0}
+.info-btn{width:15px;height:15px;border-radius:50%;background:var(--border);color:var(--muted);
+  font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;border:none;flex-shrink:0;line-height:1}
+.info-btn:hover{background:var(--blue);color:#fff}
+.section-tooltip{
+  position:fixed;z-index:9998;
+  background:#1e2433;color:#e8eaf0;
+  border-radius:8px;padding:10px 13px;
+  max-width:280px;font-size:11px;line-height:1.5;
+  box-shadow:0 4px 20px rgba(0,0,0,.25);
+  pointer-events:none;opacity:0;transition:opacity .15s;
+}
+.section-tooltip.visible{opacity:1}
+.section-tooltip-title{font-size:9px;font-weight:700;color:#6b7a99;
+  text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.section-tooltip-update{font-size:10px;color:#6b7a99;margin-top:5px;
+  border-top:1px solid #2d3548;padding-top:5px}
 .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:var(--muted)}
 .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--blue-mid);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -141,7 +162,7 @@ thead th.col-team {
   </div>
 
   <div class="dash">
-    <div class="section-label">Company overview</div>
+    <div class="section-wrap"><div class="section-label">Company overview</div><button class="info-btn" data-tip="Total, missed, inbound and outbound call counts for the current week (Mon–Sun)." data-update="Updated every Monday at 6am">i</button></div>
     <div class="metrics-row">
       <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub">Mon–Sun</div></div>
       <div class="metric-card"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div>
@@ -149,18 +170,18 @@ thead th.col-team {
       <div class="metric-card"><div class="lbl">Outbound</div><div class="val" id="mOutbound">—</div><div class="sub" id="mOutboundPct">—</div></div>
     </div>
 
-    <div class="section-label">Team overview</div>
+    <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="Updated every Monday at 6am">i</button></div>
     <div id="teamGrid" class="team-grid"></div>
 
-    <div class="section-label">Call volume by day</div>
+    <div class="section-wrap"><div class="section-label">Call volume by day</div><button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day of the week." data-update="Updated every Monday at 6am">i</button></div>
     <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
 
     <div class="two-col">
-      <div class="card"><div class="section-label" style="margin-top:0">Inbound answer rate</div><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
-      <div class="card"><div class="section-label" style="margin-top:0">Outbound connection rate</div><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
+      <div class="card"><div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
+      <div class="card"><div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team." data-update="Updated every Monday at 6am">i</button></div><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
     </div>
 
-    <div class="section-label">Inbound calls by hour — weekdays</div>
+    <div class="section-wrap"><div class="section-label">Inbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of inbound call volume by hour (8am–5pm) and day of week. Darker = busier." data-update="Updated every Monday at 6am">i</button></div>
     <div class="tabs" id="heatTabs">
       <button class="tab active" data-team="support">Support + Revered</button>
       <button class="tab" data-team="onboarding">Onboarding</button>
@@ -170,7 +191,7 @@ thead th.col-team {
     </div>
     <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
 
-    <div class="section-label">Agent master report</div>
+    <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
     <div class="tabs" id="agentTabs">
       <button class="tab active" data-team="all">All teams</button>
       <button class="tab" data-team="Support + Revered">Support + Revered</button>
@@ -218,7 +239,7 @@ thead th.col-team {
       </div>
     </div>
 
-    <div class="section-label">Callback report</div>
+    <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Callers who pressed * to request a callback. Shows total requests, how many were called back, and average pending time." data-update="Updated every Monday at 6am">i</button></div>
     <div class="card" style="overflow-x:auto;margin-bottom:24px">
       <table><thead><tr>
         <th class="l">Week</th><th class="l">Callback requests</th><th class="l">Called back</th>
@@ -846,6 +867,37 @@ function initTooltip() {
 // INIT
 // ============================================================
 initAuth().then(ready => { if (ready) loadDashboard(); });
+</script>
+<div class="section-tooltip" id="sectionTooltip">
+  <div class="section-tooltip-title" id="sectionTooltipTitle"></div>
+  <div id="sectionTooltipText"></div>
+  <div class="section-tooltip-update" id="sectionTooltipUpdate"></div>
+</div>
+<script>
+(function(){
+  const tip = document.getElementById('sectionTooltip');
+  const tipTitle = document.getElementById('sectionTooltipTitle');
+  const tipText = document.getElementById('sectionTooltipText');
+  const tipUpdate = document.getElementById('sectionTooltipUpdate');
+  document.addEventListener('mouseover', e => {
+    const btn = e.target.closest('.info-btn');
+    if (!btn) { tip.classList.remove('visible'); return; }
+    const label = btn.closest('.section-wrap').querySelector('.section-label').textContent;
+    tipTitle.textContent = label;
+    tipText.textContent = btn.dataset.tip;
+    tipUpdate.textContent = '↻ ' + btn.dataset.update;
+    tip.classList.add('visible');
+  });
+  document.addEventListener('mousemove', e => {
+    if (tip.classList.contains('visible')) {
+      tip.style.left = Math.min(e.clientX + 12, window.innerWidth - 300) + 'px';
+      tip.style.top  = Math.min(e.clientY - 10, window.innerHeight - 120) + 'px';
+    }
+  });
+  document.addEventListener('mouseout', e => {
+    if (!e.target.closest('.info-btn')) tip.classList.remove('visible');
+  });
+})();
 </script>
 </body>
 </html>
