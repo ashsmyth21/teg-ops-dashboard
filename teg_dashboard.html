@@ -658,22 +658,30 @@ function renderDashboard() {
   renderAgents(currentAgentTeam);
 
   // Callbacks
-  const cbHtml = cbRows.length > 0
-    ? cbRows.map(r => {
-        const total    = Number(r['Call Type'])   || 0;
-        const calledBack = Number(r['Started at']) || 0;
-        const notCalledBack = total - calledBack;
-        const pct      = Number(r['Tags'])         || 0;
-        const pending  = Number(r['Callback failure']) || 0;
-        const week     = r['week 22'] || '—';
-        const pctCol   = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+  // Aggregate callback rows by week
+  const cbByWeek = {};
+  cbRows.forEach(r => {
+    const week = r['week 22'];
+    if (!week) return;
+    if (!cbByWeek[week]) cbByWeek[week] = { total:0, calledBack:0, pendingSum:0, pendingCount:0 };
+    cbByWeek[week].total      += Number(r['Call Type'])       || 0;
+    cbByWeek[week].calledBack += Number(r['Started at'])      || 0;
+    const p = Number(r['Callback failure']);
+    if (p > 0) { cbByWeek[week].pendingSum += p; cbByWeek[week].pendingCount++; }
+  });
+  const cbHtml = Object.keys(cbByWeek).length > 0
+    ? Object.entries(cbByWeek).sort((a,b) => a[0]-b[0]).map(([week, d]) => {
+        const notCalledBack = d.total - d.calledBack;
+        const pct = d.total > 0 ? (d.calledBack / d.total * 100) : 0;
+        const avgPending = d.pendingCount > 0 ? (d.pendingSum / d.pendingCount) : 0;
+        const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
         return `<tr>
           <td class="l">Week ${week}</td>
-          <td class="l">${total||'—'}</td>
-          <td class="l" style="color:var(--green);font-weight:500">${calledBack||'—'}</td>
+          <td class="l">${d.total||'—'}</td>
+          <td class="l" style="color:var(--green);font-weight:500">${d.calledBack||'—'}</td>
           <td class="l" style="color:var(--red);font-weight:500">${notCalledBack > 0 ? notCalledBack : '—'}</td>
           <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
-          <td class="l">${pending ? pending.toFixed(1)+' mins' : '—'}</td>
+          <td class="l">${avgPending ? avgPending.toFixed(1)+' mins' : '—'}</td>
         </tr>`;
       }).join('')
     : '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
