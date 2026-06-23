@@ -329,6 +329,19 @@ async function readSheet(sheetName) {
   } catch(e) { console.error('readSheet error', sheetName, e); return []; }
 }
 
+async function readSheetRaw(sheetName) {
+  try {
+    const token = await getToken();
+    if (!token) return [];
+    const base = await getFileEndpoint();
+    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
+    const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
+    if (!resp.ok) { console.error('Sheet error (raw)', sheetName, resp.status); return []; }
+    const data = await resp.json();
+    return data.values || [];
+  } catch(e) { console.error('readSheetRaw error', sheetName, e); return []; }
+}
+
 // ============================================================
 // DATA PROCESSING
 // ============================================================
@@ -446,10 +459,10 @@ async function loadDashboard() {
         key: def.key, label: def.label,
         inbound:   Number(inF['Inbound calls'])  || 0,
         answered:  Number(inF['Answered inbound']) || 0,
-        answerPct: parseFloat(inF['Percentage of answered inbound calls']) || 0,
+        answerPct: (parseFloat(inF['Percentage of answered inbound calls']) || 0) * 100,
         outbound:  Number(outF['Outbound calls']) || 0,
         connOut:   Number(outF['Outbound calls (connected calls > x sec)']) || 0,
-        connPct:   parseFloat(outF['Percentage of Outbound calls (connected calls > x sec)']) || 0,
+        connPct:   (parseFloat(outF['Percentage of Outbound calls (connected calls > x sec)']) || 0) * 100,
         missed:    Number(inF['Unanswered inbound calls']) || 0,
       };
     });
@@ -553,7 +566,8 @@ async function loadDashboard() {
 
     globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit };
 
-    // Build heatmaps
+    // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
+    // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
     const heatSheets = {
       support: supportIn, revered: reveredIn, onboarding: onboardIn, risk: riskIn,
       keyaccounts: keyIn, smartbook: smartIn
