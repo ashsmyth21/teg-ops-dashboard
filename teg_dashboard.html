@@ -221,8 +221,8 @@ thead th.col-team {
     <div class="section-label">Callback report</div>
     <div class="card" style="overflow-x:auto;margin-bottom:24px">
       <table><thead><tr>
-        <th class="l">Week</th><th class="l">Callback requests</th><th class="l">Called back</th>
-        <th class="l">Not actioned</th><th class="l">Rate</th><th class="l">Avg pending (mins)</th>
+        <th class="l">Week</th><th class="l">Call type</th><th class="l">Started at</th>
+        <th class="l">Callback failure</th><th class="l">Callback pending time</th><th class="l">Entry number</th>
       </tr></thead><tbody id="cbBody"></tbody></table>
     </div>
   </div>
@@ -660,12 +660,12 @@ function renderDashboard() {
   // Callbacks
   const cbHtml = cbRows.length > 0
     ? cbRows.map(r => `<tr>
-        <td class="l">${r['Week']||'—'}</td>
-        <td class="l">${r['Callback requests received']||'—'}</td>
-        <td class="l">${r['Called back']||'—'}</td>
-        <td class="l">${r['Not actioned']||'—'}</td>
-        <td class="l">${r['Rate %']||'—'}</td>
-        <td class="l">${r['Avg pending time (mins)']||'—'}</td>
+        <td class="l">${r['week 22']||'—'}</td>
+        <td class="l">${r['Call Type']||'—'}</td>
+        <td class="l">${r['Started at']||'—'}</td>
+        <td class="l">${r['Callback failure']||'—'}</td>
+        <td class="l">${r['Callback pending time']||'—'}</td>
+        <td class="l">${r['Entry number']||'—'}</td>
       </tr>`).join('')
     : '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
   document.getElementById('cbBody').innerHTML = cbHtml;
