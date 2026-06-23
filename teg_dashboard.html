@@ -221,8 +221,8 @@ thead th.col-team {
     <div class="section-label">Callback report</div>
     <div class="card" style="overflow-x:auto;margin-bottom:24px">
       <table><thead><tr>
-        <th class="l">Week</th><th class="l">Call type</th><th class="l">Started at</th>
-        <th class="l">Callback failure</th><th class="l">Callback pending time</th><th class="l">Entry number</th>
+        <th class="l">Week</th><th class="l">Callback requests</th><th class="l">Called back</th>
+        <th class="l">Not called back</th><th class="l">% called back</th><th class="l">Avg pending (mins)</th>
       </tr></thead><tbody id="cbBody"></tbody></table>
     </div>
   </div>
@@ -659,14 +659,23 @@ function renderDashboard() {
 
   // Callbacks
   const cbHtml = cbRows.length > 0
-    ? cbRows.map(r => `<tr>
-        <td class="l">${r['week 22']||'—'}</td>
-        <td class="l">${r['Call Type']||'—'}</td>
-        <td class="l">${r['Started at']||'—'}</td>
-        <td class="l">${r['Callback failure']||'—'}</td>
-        <td class="l">${r['Callback pending time']||'—'}</td>
-        <td class="l">${r['Entry number']||'—'}</td>
-      </tr>`).join('')
+    ? cbRows.map(r => {
+        const total    = Number(r['Call Type'])   || 0;
+        const calledBack = Number(r['Started at']) || 0;
+        const notCalledBack = total - calledBack;
+        const pct      = Number(r['Tags'])         || 0;
+        const pending  = Number(r['Callback failure']) || 0;
+        const week     = r['week 22'] || '—';
+        const pctCol   = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+        return `<tr>
+          <td class="l">Week ${week}</td>
+          <td class="l">${total||'—'}</td>
+          <td class="l" style="color:var(--green);font-weight:500">${calledBack||'—'}</td>
+          <td class="l" style="color:var(--red);font-weight:500">${notCalledBack > 0 ? notCalledBack : '—'}</td>
+          <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
+          <td class="l">${pending ? pending.toFixed(1)+' mins' : '—'}</td>
+        </tr>`;
+      }).join('')
     : '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
   document.getElementById('cbBody').innerHTML = cbHtml;
 
