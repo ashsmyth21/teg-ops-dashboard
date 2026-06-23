@@ -469,16 +469,15 @@ async function loadDashboard() {
       if (name) cvMap[name] = r;
     });
 
-    // ---- Zendesk map (merge all per-team tabs) ----
+    // ---- Zendesk map ----
     const zdMap = {};
-    const allZdRows = [...zdSupportRows, ...zdOnboardRows, ...zdRiskRows, ...zdCreditRows, ...zdKeyRows, ...zd2ndRows];
-    allZdRows.forEach(r => {
-      const name = String(r["Updater agent name"]||r["Agent name"]||"").trim();
+    zdRows.forEach(r => {
+      const name = String(r['Agent name']||'').trim();
       if (!name) return;
       if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
-      zdMap[name].internal += Number(r["Internal comments"]) || 0;
-      zdMap[name].public   += Number(r["Public comments"])   || 0;
-      zdMap[name].solved   += Number(r["Tickets solved"])    || 0;
+      zdMap[name].internal += Number(r['Internal comments']) || 0;
+      zdMap[name].public   += Number(r['Public comments'])   || 0;
+      zdMap[name].solved   += Number(r['Tickets solved'])    || 0;
     });
 
     // ---- AI summaries map ----
