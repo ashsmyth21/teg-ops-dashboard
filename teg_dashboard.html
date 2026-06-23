@@ -334,7 +334,11 @@ async function readSheet(sheetName) {
 // ============================================================
 function fmtHrs(sec) {
   if (!sec || sec <= 0) return '—';
-  return Math.round(sec / 3600) + 'h';
+  const hrs = sec / 3600;
+  if (hrs >= 1) return Math.round(hrs) + 'h';
+  const mins = Math.round(hrs * 60);
+  if (mins <= 0) return '—';
+  return mins + 'm';
 }
 
 function parseTimeSec(t) {
@@ -736,48 +740,9 @@ function renderAgents(team) {
   const seen = {};
   const rows = list.filter(a => { if(seen[a.name]) return false; seen[a.name]=true; return true; });
 
-  // Summary split row for Support + Revered
   let summaryRowHtml = '';
-  if (team === 'Support + Revered' && globalData.supportRevSplit) {
-    const sp = globalData.supportRevSplit.support;
-    const rv = globalData.supportRevSplit.revered;
-    // Outbound from agent-level call volumes (not team sheets - avoids attribution gap)
-    const agentOutbound  = rows.reduce((s,a) => s + (a.cv ? (Number(a.cv['Outbound calls']||a.cv['Outbound']||0)) : 0), 0);
-    const agentConnOut   = rows.reduce((s,a) => s + (a.cv ? (Number(a.cv['Connected outbound calls']||a.cv['Connected outbound']||0)) : 0), 0);
-    const total = {
-      inbound:  sp.inbound  + rv.inbound,
-      answered: sp.answered + rv.answered,
-      missed:   sp.missed   + rv.missed,
-      outbound: agentOutbound,
-      connOut:  agentConnOut,
-    };
-    // Override sp/rv outbound with agent-level too (team sheets miss main line outbound)
-    sp.outbound = rows.filter(a => a.team === 'Support + Revered').reduce((s,a) => s + (a.cv ? (Number(a.cv['Outbound calls']||a.cv['Outbound']||0)) : 0), 0);
-    sp.connOut  = rows.filter(a => a.team === 'Support + Revered').reduce((s,a) => s + (a.cv ? (Number(a.cv['Connected outbound calls']||a.cv['Connected outbound']||0)) : 0), 0);
-    rv.outbound = 0; rv.connOut = 0; // all in same team bucket until cfg_agents split
-    const seg = (label, color, vals) =>
-      `<div style="display:flex;flex-direction:column;gap:2px;padding:6px 16px;border-right:1px solid var(--border)">
-        <span style="font-size:9px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.06em">${label}</span>
-        <span style="font-size:11px;color:var(--text);white-space:nowrap;display:flex;gap:12px">
-          <span>In: <b>${vals.inbound}</b></span>
-          <span>Ans: <b style="color:var(--green)">${vals.answered}</b></span>
-          <span>Missed: <b style="color:var(--red)">${vals.missed}</b></span>
-          <span>Out: <b>${vals.outbound}</b></span>
-          <span>Conn: <b>${vals.connOut}</b></span>
-        </span>
-      </div>`;
-    summaryRowHtml = `<tr style="background:#f0f6ff;border-bottom:2px solid #c7d7f8">
-      <td colspan="19" style="padding:0;background:#f0f6ff">
-        <div style="display:flex;align-items:stretch;justify-content:center;gap:0">
-          ${seg('Support', '#1d4ed8', sp)}
-          ${seg('Revered', '#0e7490', rv)}
-          ${seg('Combined', '#374151', total)}
-        </div>
-      </td>
-    </tr>`;
-  }
 
-  document.getElementById('agentBody').innerHTML = summaryRowHtml + rows.map(a => {
+    document.getElementById('agentBody').innerHTML = rows.map(a => {
     const tc = TEAM_COLORS[a.team]||'#888';
     const sh = TEAM_SHORT[a.team]||a.team;
     const bw = maxCallSec>0?Math.round(a.in_call/maxCallSec*40):0;
