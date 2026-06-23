@@ -433,7 +433,8 @@ async function loadDashboard() {
       dayData.inbound[day]  = Number(r['Inbound Calls'])  || 0;
       dayData.outbound[day] = Number(r['Outbound Calls']) || 0;
       dayData.missed[day]   = Number(r['Missed Calls'])   || 0;
-      dayData.total[day]    = Number(r['total calls'])    || 0;
+      // Calculate total from components — formula column unreliable
+      dayData.total[day]    = (Number(r['Inbound Calls']) || 0) + (Number(r['Outbound Calls']) || 0);
     });
     const totals = {
       total:    dayOrder.reduce((s,d) => s+(dayData.total[d]||0),   0),
