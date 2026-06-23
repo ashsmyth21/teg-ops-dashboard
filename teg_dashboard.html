@@ -339,9 +339,13 @@ function fmtHrs(sec) {
 
 function parseTimeSec(t) {
   if (!t) return 0;
+  // HH:MM:SS string format
   const s = String(t);
   const parts = s.split(':');
   if (parts.length === 3) return (+parts[0])*3600 + (+parts[1])*60 + (+parts[2]);
+  // Decimal hours (e.g. 5.775 = 5h 46m)
+  const num = parseFloat(t);
+  if (!isNaN(num) && num > 0) return Math.round(num * 3600);
   return 0;
 }
 
