@@ -384,7 +384,7 @@ async function loadDashboard() {
 
   try {
     const [companyRows, agentStatsRows, cvRows,
-           zdSupportRows, zdOnboardRows, zdRiskRows, zdCreditRows, zdKeyRows, zd2ndRows,
+           zdRows,
            aiRows,
            cbRows, teamRows,
            supportIn, supportOut, reveredIn, reveredOut,
@@ -392,12 +392,7 @@ async function loadDashboard() {
       readSheet('Company call data'),
       readSheet('agent stats'),
       readSheet('call volumes'),
-      readSheet('Support zendesk ticket action'),
-      readSheet(' Onboarding zendesk ticket acti'),
-      readSheet('Risk zendesk ticket action'),
-      readSheet('Credit control zendesk ticket a'),
-      readSheet('Key accounts zendesk ticket act'),
-      readSheet('2nd line zendesk ticket action'),
+      readSheet('zendesk ticket activity'),
       readSheet('ai summaries'),
       readSheet('call back data'),
       readSheet('cfg_agents '),
