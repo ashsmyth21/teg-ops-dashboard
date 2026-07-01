@@ -627,11 +627,6 @@ async function loadDashboard() {
       const t = String(r['team']||'').trim();
       if (name && t) agentTeamMap[name] = t;
     });
-    const aiMap = {};
-    aiRows.forEach(r => {
-      const name = String(r['Agent name']||'').trim();
-      if (name) aiMap[name] = String(r['Summary']||'');
-    });
     globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap };
 
     // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
