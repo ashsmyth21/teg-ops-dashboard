@@ -192,6 +192,18 @@ thead th.col-team {
     <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
 
     <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
+    <div id="weekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
+      <div class="tabs" id="weekTabs" style="margin-bottom:0">
+        <button class="tab active" data-week="latest">Latest</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-left:8px">
+        <input type="date" id="customFrom" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:5px;color:var(--text)">
+        <span style="font-size:11px;color:var(--muted)">to</span>
+        <input type="date" id="customTo" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:5px;color:var(--text)">
+        <button onclick="applyCustomWeek()" style="font-size:11px;padding:3px 10px;border:1px solid var(--blue);border-radius:5px;background:var(--blue);color:#fff;cursor:pointer">Apply</button>
+      </div>
+    </div>
     <div class="tabs" id="agentTabs">
       <button class="tab active" data-team="all">All teams</button>
       <button class="tab" data-team="Support + Revered">Support + Revered</button>
@@ -419,6 +431,7 @@ function fh(s) { return (!s || s === '—' || s === '0h') ? '<span class="muted"
 let globalData = {};
 let currentHeatTeam = 'support';
 let currentAgentTeam = 'all';
+let currentWeek = 'latest';
 let charts = {};
 
 async function loadDashboard() {
@@ -508,14 +521,20 @@ async function loadDashboard() {
 
     // ---- Call volumes map ----
     const cvMap = {};
-    cvRows.forEach(r => {
+    const allCvWeeks = [...new Set(cvRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+    const latestCvWeek = allCvWeeks[allCvWeeks.length - 1];
+    const selectedCvWeek = (currentWeek === 'latest' || !currentWeek) ? latestCvWeek : Number(currentWeek);
+    cvRows.filter(r => Number(r['Week']) === selectedCvWeek).forEach(r => {
       const name = String(r['User']||'').trim();
       if (name) cvMap[name] = r;
     });
 
     // ---- Zendesk map ----
     const zdMap = {};
-    zdRows.forEach(r => {
+    const allZdWeeks = [...new Set(zdRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+    const latestZdWeek = allZdWeeks[allZdWeeks.length - 1];
+    const selectedZdWeek = (currentWeek === 'latest' || !currentWeek) ? latestZdWeek : Number(currentWeek);
+    zdRows.filter(r => Number(r['Week']) === selectedZdWeek).forEach(r => {
       const name = String(r['Agent name']||'').trim();
       if (!name) return;
       if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
@@ -533,7 +552,13 @@ async function loadDashboard() {
 
     // ---- Agent stats aggregation ----
     const agentAgg = {};
+    // Determine which week to use
+    const allWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+    const latestWeek = allWeeks[allWeeks.length - 1];
+    const selectedWeek = (currentWeek === 'latest' || !currentWeek) ? latestWeek : Number(currentWeek);
+
     agentStatsRows.forEach(r => {
+      if (Number(r['Week']) !== selectedWeek) return;
       const name = String(r['Agent Name']||'').trim();
       if (!name || name === 'null' || name === 'Agent Name') return;
       if (!agentAgg[name]) agentAgg[name] = {};
@@ -616,6 +641,9 @@ async function loadDashboard() {
       globalData.heatmaps[key] = hm;
     });
 
+    // Build week filter tabs from available weeks in agent stats
+    const availableWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+    globalData.availableWeeks = availableWeeks;
     renderDashboard();
     document.getElementById('loadingScreen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -634,6 +662,19 @@ function renderDashboard() {
   const { totals, dayOrder, dayData, teamSummary, agents, cbRows, weekNum } = globalData;
 
   document.getElementById('weekBadge').textContent = 'Week ' + weekNum;
+
+  // Build week filter tabs
+  const weekTabsEl = document.getElementById('weekTabs');
+  const weeks = globalData.availableWeeks || [];
+  weekTabsEl.innerHTML = '<button class="tab' + (currentWeek==='latest'?' active':'') + '" data-week="latest">Latest</button>' +
+    weeks.map(w => `<button class="tab${currentWeek==w?' active':''}" data-week="${w}">Wk ${w}</button>`).join('');
+  weekTabsEl.addEventListener('click', e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    document.querySelectorAll('#weekTabs .tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    currentWeek = btn.dataset.week;
+    renderAgents(currentAgentTeam);
+  });
 
   // Metrics
   const mp = v => totals.total > 0 ? ((v/totals.total)*100).toFixed(1)+'% of total' : '—';
@@ -846,7 +887,7 @@ function renderAgents(team) {
   }
 
   const maxCallSec = agents.reduce((m,a) => Math.max(m,a.in_call||0), 0);
-  // Only show agents in dashboard teams
+  // Only show agents in dashboard teams, filtered by week
   const list = team === 'all'
     ? agents.filter(a => DASHBOARD_TEAMS.has(a.team))
     : agents.filter(a => a.team === team);
@@ -898,6 +939,18 @@ function renderAgents(team) {
 // ============================================================
 // CALLBACK EXPAND/COLLAPSE
 // ============================================================
+function applyCustomWeek() {
+  const from = document.getElementById('customFrom').value;
+  const to   = document.getElementById('customTo').value;
+  if (!from || !to) return;
+  // Find weeks that fall within the custom range
+  const fromDate = new Date(from);
+  const toDate   = new Date(to);
+  const weeks = globalData.availableWeeks || [];
+  // Use the latest week within range — simplification until full date-range filtering
+  alert('Custom date range coming soon — use the week buttons for now.');
+}
+
 function toggleCbWeek(wkId, headerRow) {
   const rows = document.querySelectorAll(`tr[data-parent="${wkId}"]`);
   const isOpen = headerRow.classList.contains('open');
