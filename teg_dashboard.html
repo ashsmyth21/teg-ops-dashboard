@@ -544,20 +544,22 @@ async function fetchLiveData() {
   const from = now - CONFIG.LOOKBACK_DAYS * 86400;
 
   /* ── Aircall: users + teams + calls + V2 availabilities in parallel ── */
-  let aircallUsers = [], aircallTeams = [], rawCalls = [], availabilities = [];
+  let aircallUsers = [], aircallTeams = [], rawCalls = [], availabilities = [], aircallNumbers = [];
   let aircallOk = false;
 
   try {
-    const [usersResp, teamsResp, callsResp, availResp] = await Promise.all([
-      fetchAircall('/v1/users?per_page=50'),        // includes teams[] array per user
+    const [usersResp, teamsResp, callsResp, availResp, numbersResp] = await Promise.all([
+      fetchAircall('/v1/users?per_page=50'),
       fetchAircall('/v1/teams?per_page=50'),
       fetchAircall(`/v1/calls?from=${from}&to=${now}`),
       fetchAircall('/v1/users/availabilities').catch(() => ({ users: [] })),
+      fetchAircall('/v1/numbers?per_page=50'),
     ]);
-    aircallUsers   = usersResp.users  || [];
-    aircallTeams   = teamsResp.teams  || [];
-    rawCalls       = callsResp.calls  || [];
-    availabilities = availResp.users  || availResp.data || [];
+    aircallUsers   = usersResp.users   || [];
+    aircallTeams   = teamsResp.teams   || [];
+    rawCalls       = callsResp.calls   || [];
+    availabilities = availResp.users   || availResp.data || [];
+    aircallNumbers = numbersResp.numbers || [];
     aircallOk = true;
     setApiStatus('ac', 'ok');
   } catch(e) {
@@ -574,45 +576,58 @@ async function fetchLiveData() {
     };
   });
 
-  // Build user maps — try both u.teams[] and u.team_name for compatibility
-  const userById = {};
-  const userTeam = {};
+  // ── Build lookup maps from teams and numbers ──────────────────
+  // userTeam: user_id → team name  (built by inverting teams[].users[])
+  const userById  = {};
+  const userEmail = {};  // user_id → email (for ZD join)
+  const userTeam  = {};
   aircallUsers.forEach(u => {
-    userById[u.id] = u.name;
-    // V1 /users returns teams as an array of {id, name} objects
-    if (u.teams && u.teams.length)      userTeam[u.id] = u.teams[0].name;
-    else if (u.team_name)               userTeam[u.id] = u.team_name;
-    else if (u.team && u.team.name)     userTeam[u.id] = u.team.name;
+    userById[u.id]  = u.name;
+    userEmail[u.id] = (u.email || '').toLowerCase();
+  });
+  // Teams endpoint returns users[] per team — invert to get user→team
+  aircallTeams.forEach(t => {
+    (t.users || []).forEach(u => { userTeam[u.id] = t.name; });
   });
 
-  /* ── Process Aircall calls ── */
+  // numberTeam: number_id → team name  (built from numbers[].team.name)
+  const numberTeam = {};
+  aircallNumbers.forEach(n => {
+    if (n.id && n.live_recording_activated !== undefined) {
+      // number object — team is at n.routing_strategy or n.team_name or n.team.name
+      const tn = (n.team && n.team.name) || n.team_name || '';
+      if (tn) numberTeam[n.id] = tn;
+    }
+  });
+
+  /* ── Process calls ─────────────────────────────────────────── */
   const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const dayData  = { inbound:{}, outbound:{}, missed:{} };
   dayOrder.forEach(d => { dayData.inbound[d]=0; dayData.outbound[d]=0; dayData.missed[d]=0; });
 
-  const agentCallAgg = {}; // name → { inbound, outbound, in_call_sec, conn_out }
+  const agentCallAgg = {}; // user_id → { inbound, outbound, in_call_sec, conn_out }
   const teamCallAgg  = {}; // team_name → { inbound, answered, outbound, connOut, missed }
-  const heatmapRaw   = {}; // teamKey → { Mon: {8: count, ...}, ... }
+  const heatmapRaw   = {}; // team_name → { Mon: { 8: count } }
 
   rawCalls.forEach(call => {
-    const day = dayNames[new Date(call.started_at * 1000).getDay()];
-    const dir = call.direction; // 'inbound' | 'outbound'
-    const missed = call.status === 'missed' || call.status === 'voicemail';
+    const day    = dayNames[new Date(call.started_at * 1000).getDay()];
+    const dir    = call.direction;
+    // Missed = any call with a missed_call_reason set (status is always "done")
+    const missed = !!call.missed_call_reason;
 
     if (dir === 'inbound') {
-      dayData.inbound[day]  = (dayData.inbound[day] || 0) + 1;
+      dayData.inbound[day] = (dayData.inbound[day] || 0) + 1;
       if (missed) dayData.missed[day] = (dayData.missed[day] || 0) + 1;
     } else {
       dayData.outbound[day] = (dayData.outbound[day] || 0) + 1;
     }
 
-    // Agent aggregation
-    const userId = call.user ? call.user.id : null;
-    const agentName = userId ? userById[userId] : null;
-    if (agentName) {
-      if (!agentCallAgg[agentName]) agentCallAgg[agentName] = { inbound:0, outbound:0, in_call_sec:0, conn_out:0 };
-      const agg = agentCallAgg[agentName];
+    // Agent aggregation — keyed by user id for reliability
+    const uid = call.user ? call.user.id : null;
+    if (uid) {
+      if (!agentCallAgg[uid]) agentCallAgg[uid] = { inbound:0, outbound:0, in_call_sec:0, conn_out:0 };
+      const agg = agentCallAgg[uid];
       if (dir === 'inbound' && !missed) agg.inbound++;
       if (dir === 'outbound') {
         agg.outbound++;
@@ -621,80 +636,75 @@ async function fetchLiveData() {
       agg.in_call_sec += call.duration || 0;
     }
 
-    // Team aggregation (use the number's team if available)
-    const teamName = call.number ? (call.number.team_name || '') : '';
+    // Team aggregation — look up number → team from the numbers map
+    const numId    = call.number ? call.number.id : null;
+    const teamName = numId ? (numberTeam[numId] || '') : '';
     if (teamName) {
       if (!teamCallAgg[teamName]) teamCallAgg[teamName] = { inbound:0, answered:0, outbound:0, connOut:0, missed:0 };
       const tagg = teamCallAgg[teamName];
       if (dir === 'inbound') {
         tagg.inbound++;
-        if (!missed) tagg.answered++;
-        else tagg.missed++;
+        if (!missed) tagg.answered++; else tagg.missed++;
       } else {
         tagg.outbound++;
         if ((call.duration || 0) > 10) tagg.connOut++;
       }
     }
 
-    // Heatmap
-    const callHour = new Date(call.started_at * 1000).getHours();
-    const shortDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(call.started_at*1000).getDay()];
-    const hmTeamKey = teamName || 'all';
-    if (!heatmapRaw[hmTeamKey]) heatmapRaw[hmTeamKey] = {};
-    if (!heatmapRaw[hmTeamKey][shortDay]) heatmapRaw[hmTeamKey][shortDay] = {};
-    heatmapRaw[hmTeamKey][shortDay][callHour] = (heatmapRaw[hmTeamKey][shortDay][callHour] || 0) + 1;
+    // Heatmap — bucket by team, fall back to number name if no team
+    const hmKey = teamName || (call.number ? call.number.name : 'other');
+    const hour  = new Date(call.started_at * 1000).getHours();
+    const sday  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(call.started_at * 1000).getDay()];
+    if (!heatmapRaw[hmKey]) heatmapRaw[hmKey] = {};
+    if (!heatmapRaw[hmKey][sday]) heatmapRaw[hmKey][sday] = {};
+    heatmapRaw[hmKey][sday][hour] = (heatmapRaw[hmKey][sday][hour] || 0) + 1;
   });
 
   const totals = {
-    inbound:  dayOrder.reduce((s,d) => s+dayData.inbound[d],  0),
-    outbound: dayOrder.reduce((s,d) => s+dayData.outbound[d], 0),
-    missed:   dayOrder.reduce((s,d) => s+dayData.missed[d],   0),
+    inbound:  dayOrder.reduce((s,d) => s + dayData.inbound[d],  0),
+    outbound: dayOrder.reduce((s,d) => s + dayData.outbound[d], 0),
+    missed:   dayOrder.reduce((s,d) => s + dayData.missed[d],   0),
   };
   totals.total = totals.inbound + totals.outbound;
 
-  // Build teamSummary from Aircall teams list + aggregated call data
+  // Team summary — built from aircallTeams so every team appears even if zero calls
   const teamSummary = aircallTeams.map(t => {
-    const agg = teamCallAgg[t.name] || { inbound:0, answered:0, outbound:0, connOut:0, missed:0 };
-    const answerPct = agg.inbound > 0 ? agg.answered / agg.inbound * 100 : 0;
-    const connPct   = agg.outbound > 0 ? agg.connOut / agg.outbound * 100 : 0;
-    const key = t.name.toLowerCase().replace(/\s+/g,'').replace(/[^a-z]/g,'');
+    const agg       = teamCallAgg[t.name] || { inbound:0, answered:0, outbound:0, connOut:0, missed:0 };
+    const answerPct = agg.inbound  > 0 ? agg.answered / agg.inbound  * 100 : 0;
+    const connPct   = agg.outbound > 0 ? agg.connOut  / agg.outbound * 100 : 0;
+    const key       = t.name.toLowerCase().replace(/[^a-z]/g, '');
     return { key, label: t.name, ...agg, answerPct, connPct, color: TEAM_COLORS[t.name] || '#888' };
   }).filter(t => t.inbound + t.outbound > 0);
 
-  // Build heatmaps
+  // Heatmaps — one per team
   const heatmaps = {};
-  Object.entries(heatmapRaw).forEach(([teamKey, dayMap]) => {
+  Object.entries(heatmapRaw).forEach(([key, dayMap]) => {
     const hm = {};
     ['Mon','Tue','Wed','Thu','Fri'].forEach(d => {
       hm[d] = [];
-      for (let h=8; h<=18; h++) hm[d].push({ hr:h, v: (dayMap[d] || {})[h] || 0 });
+      for (let h = 8; h <= 18; h++) hm[d].push({ hr: h, v: (dayMap[d] || {})[h] || 0 });
     });
-    heatmaps[teamKey] = hm;
+    heatmaps[key] = hm;
   });
 
-  // Build agents list — call volumes from /v1/calls, current status from /v2/users/availabilities
+  // Agent list — keyed by user id, joined to team via userTeam map
   const agents = aircallUsers.map(u => {
-    const ca        = agentCallAgg[u.name] || {};
-    const av        = availMap[u.id]       || {};
-    const in_call   = ca.in_call_sec || 0;
-    const inbound   = ca.inbound   || 0;
-    const outbound  = ca.outbound  || 0;
+    const ca       = agentCallAgg[u.id] || {};
+    const av       = availMap[u.id]     || {};
+    const in_call  = ca.in_call_sec || 0;
+    const inbound  = ca.inbound  || 0;
+    const outbound = ca.outbound || 0;
     const allowed_acw = (inbound + outbound) * 180;
-    const callProd    = in_call;
-    const callUtil    = Math.min(Math.round(callProd / CONFIG.CONTRACTED_SECS * 100), 100);
+    const callUtil    = Math.min(Math.round(in_call / CONFIG.CONTRACTED_SECS * 100), 100);
     const team        = userTeam[u.id] || '—';
-
-    // Current live status from V2 availabilities
-    const status    = av.status    || 'offline';
-    const substatus = av.substatus || null;
-
+    const status      = av.status    || u.availability_status || 'offline';
+    const substatus   = av.substatus || null;
     return {
-      name: u.name, team, in_call, available: 0, after_call_work: 0,
-      allowed_acw, excess_acw: 0,
+      id: u.id, name: u.name, email: (u.email || '').toLowerCase(),
+      team, in_call, allowed_acw, excess_acw: 0,
       inbound_calls: inbound, outbound_calls: outbound,
       conn_out: ca.conn_out || 0, callUtil, zdUtil: 0,
-      partWeek: false, zd: null,
-      status, substatus,   // live snapshot
+      partWeek: false, zd: null, status, substatus,
     };
   }).filter(a => a.inbound_calls + a.outbound_calls + a.in_call > 0)
     .sort((a,b) => b.callUtil - a.callUtil);
@@ -714,26 +724,27 @@ async function fetchLiveData() {
 
     setApiStatus('zd', 'ok');
 
-    // Build ZD user id → name map
-    const zdUserById = {};
-    (zdUsersResp || []).forEach(u => { zdUserById[u.id] = u.name; });
-
-    // Count solved tickets per agent
-    const agentZD = {};
-    (solvedResp || []).forEach(t => {
-      const name = zdUserById[t.assignee_id] || '';
-      if (!name) return;
-      if (!agentZD[name]) agentZD[name] = { solved: 0 };
-      agentZD[name].solved++;
+    // Build ZD email → agent index map for joining to Aircall users by email
+    const zdByEmail = {};
+    (zdUsersResp || []).forEach(u => {
+      if (u.email) zdByEmail[u.email.toLowerCase()] = u;
     });
 
-    // Enrich agents with ZD solved count
+    // Count solved tickets per ZD user id
+    const solvedByZdId = {};
+    (solvedResp || []).forEach(t => {
+      if (!t.assignee_id) return;
+      solvedByZdId[t.assignee_id] = (solvedByZdId[t.assignee_id] || 0) + 1;
+    });
+
+    // Enrich Aircall agents — join on email
     agents.forEach(a => {
-      const zd = agentZD[a.name];
-      if (zd) {
-        a.zd = zd;
-        // Use solved count as a proxy for productivity score
-        const zdProd = zd.solved * CONFIG.COMMENT_TIME * 3;
+      const zdUser = zdByEmail[a.email];
+      if (!zdUser) return;
+      const solved = solvedByZdId[zdUser.id] || 0;
+      if (solved > 0) {
+        a.zd = { solved };
+        const zdProd = solved * CONFIG.COMMENT_TIME * 3;
         a.zdUtil = Math.min(Math.round(zdProd / CONFIG.CONTRACTED_SECS * 100), 100);
       }
     });
