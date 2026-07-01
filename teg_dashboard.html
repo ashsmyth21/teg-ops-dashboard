@@ -245,6 +245,17 @@ thead th.col-team {
         <th class="l">Week</th><th class="l">Callback requests</th><th class="l">Called back</th>
         <th class="l">Not called back</th><th class="l">% called back</th><th class="l">Avg pending (mins)</th>
       </tr></thead><tbody id="cbBody"></tbody></table>
+<style>
+.cb-week-row{cursor:pointer;user-select:none}
+.cb-week-row:hover td{background:var(--blue-light)}
+.cb-week-row td:first-child::before{content:'▶ ';font-size:9px;color:var(--muted);margin-right:4px;transition:transform .15s;display:inline-block}
+.cb-week-row.open td:first-child::before{content:'▼ ';color:var(--blue)}
+.cb-day-rows{display:none}
+.cb-week-row.open ~ .cb-day-rows{display:table-row-group}
+.cb-day-row td{background:#fafbff;font-size:10px;color:var(--muted);padding:3px 6px}
+.cb-day-row td:first-child{padding-left:24px;color:var(--text)}
+.cb-day-row:last-child td{border-bottom:2px solid var(--border)}
+</style>
     </div>
   </div>
 </div>
@@ -695,30 +706,61 @@ function renderDashboard() {
 
   // Callbacks
   // Aggregate callback rows by week
+  // New column structure: Week, Date, Callback requests, Called back, Not actioned, Rate %, Avg pending (mins)
   const cbByWeek = {};
   cbRows.forEach(r => {
-    const week = r['week 22'];
+    const week = r['Week'] || r['week 22'];
     if (!week) return;
-    if (!cbByWeek[week]) cbByWeek[week] = { total:0, calledBack:0, pendingSum:0, pendingCount:0 };
-    cbByWeek[week].total      += Number(r['Call Type'])       || 0;
-    cbByWeek[week].calledBack += Number(r['Started at'])      || 0;
-    const p = Number(r['Callback failure']);
-    if (p > 0) { cbByWeek[week].pendingSum += p; cbByWeek[week].pendingCount++; }
+    const wk = String(week);
+    if (!cbByWeek[wk]) cbByWeek[wk] = { total:0, calledBack:0, notActioned:0, pendingSum:0, pendingCount:0, days:[] };
+    const req = Number(r['Callback requests']) || 0;
+    const cb  = Number(r['Called back'])       || 0;
+    const na  = Number(r['Not actioned'])      || 0;
+    const pend = Number(r['Avg pending (mins)']) || 0;
+    cbByWeek[wk].total      += req;
+    cbByWeek[wk].calledBack += cb;
+    cbByWeek[wk].notActioned += na;
+    if (pend > 0) { cbByWeek[wk].pendingSum += pend; cbByWeek[wk].pendingCount++; }
+    // Store daily row if date present
+    const date = r['Date'];
+    if (date) cbByWeek[wk].days.push({ date, req, cb, na, pend, rate: Number(r['Rate %'])||0 });
   });
+
+  const DAYS_OF_WEEK = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const cbHtml = Object.keys(cbByWeek).length > 0
-    ? Object.entries(cbByWeek).sort((a,b) => a[0]-b[0]).map(([week, d]) => {
-        const notCalledBack = d.total - d.calledBack;
+    ? Object.entries(cbByWeek).sort((a,b) => Number(a[0])-Number(b[0])).map(([week, d]) => {
         const pct = d.total > 0 ? (d.calledBack / d.total * 100) : 0;
         const avgPending = d.pendingCount > 0 ? (d.pendingSum / d.pendingCount) : 0;
         const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
-        return `<tr>
-          <td class="l">Week ${week}</td>
+
+        // Build 7-day calendar row
+        const dayMap = {};
+        d.days.forEach(day => { dayMap[day.date] = day; });
+        const sortedDays = d.days.map(dy => dy.date).sort();
+        const dayRows = sortedDays.map(date => {
+          const dy = dayMap[date];
+          const dPctCol = dy.rate >= 70 ? 'var(--green)' : dy.rate >= 50 ? 'var(--amber)' : dy.rate > 0 ? 'var(--red)' : 'var(--subtle)';
+          const dateObj = new Date(date);
+          const dayName = DAYS_OF_WEEK[(dateObj.getUTCDay() + 6) % 7];
+          const dateLabel = `${dayName} ${dateObj.getUTCDate()}/${dateObj.getUTCMonth()+1}`;
+          return `<tr class="cb-day-row">
+            <td class="l">${dateLabel}</td>
+            <td class="l">${dy.req||'—'}</td>
+            <td class="l" style="color:var(--green)">${dy.cb||'—'}</td>
+            <td class="l" style="color:var(--red)">${dy.na > 0 ? dy.na : '—'}</td>
+            <td class="l" style="color:${dPctCol};font-weight:600">${dy.rate ? dy.rate.toFixed(1)+'%' : '—'}</td>
+            <td class="l">${dy.pend ? dy.pend.toFixed(1)+' mins' : '—'}</td>
+          </tr>`;
+        }).join('');
+
+        return `<tr class="cb-week-row" onclick="this.classList.toggle('open');var next=this.nextElementSibling;if(next&&next.classList.contains('cb-day-rows')){next.style.display=next.style.display==='table-row-group'?'none':'table-row-group'}">
+          <td class="l"><strong>Week ${week}</strong></td>
           <td class="l">${d.total||'—'}</td>
           <td class="l" style="color:var(--green);font-weight:500">${d.calledBack||'—'}</td>
-          <td class="l" style="color:var(--red);font-weight:500">${notCalledBack > 0 ? notCalledBack : '—'}</td>
+          <td class="l" style="color:var(--red);font-weight:500">${d.notActioned > 0 ? d.notActioned : '—'}</td>
           <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
           <td class="l">${avgPending ? avgPending.toFixed(1)+' mins' : '—'}</td>
-        </tr>`;
+        </tr><tbody class="cb-day-rows" style="display:none">${dayRows}</tbody>`;
       }).join('')
     : '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
   document.getElementById('cbBody').innerHTML = cbHtml;
