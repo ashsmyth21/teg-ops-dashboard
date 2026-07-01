@@ -197,9 +197,7 @@ thead th.col-team {
       <button class="tab" data-team="Support + Revered">Support + Revered</button>
       <button class="tab" data-team="Onboarding">Onboarding</button>
       <button class="tab" data-team="Risk and compliance">Risk</button>
-      <button class="tab" data-team="Key Accounts VIP Response Team">Key accounts</button>
       <button class="tab" data-team="Credit Control">Credit control</button>
-      <button class="tab" data-team="Smartbook members">Smartbook</button>
       <button class="tab" data-team="2nd line (Tech support team)">2nd line</button>
     </div>
     <div class="card" style="padding:0;margin-bottom:12px;overflow:hidden">
@@ -831,6 +829,11 @@ function renderHeatmap(team) {
   });
 }
 
+const DASHBOARD_TEAMS = new Set([
+  'Support + Revered', 'Onboarding', 'Risk and compliance',
+  'Credit Control', '2nd line (Tech support team)'
+]);
+
 function renderAgents(team) {
   const { agents } = globalData;
 
@@ -843,7 +846,10 @@ function renderAgents(team) {
   }
 
   const maxCallSec = agents.reduce((m,a) => Math.max(m,a.in_call||0), 0);
-  const list = team === 'all' ? agents : agents.filter(a => a.team === team);
+  // Only show agents in dashboard teams
+  const list = team === 'all'
+    ? agents.filter(a => DASHBOARD_TEAMS.has(a.team))
+    : agents.filter(a => a.team === team);
   const seen = {};
   const rows = list.filter(a => { if(seen[a.name]) return false; seen[a.name]=true; return true; });
 
