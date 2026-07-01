@@ -272,13 +272,6 @@ thead th.col-agent,thead th.col-team{z-index:4}
     <div class="tabs" id="heatTabs"></div>
     <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
 
-    <!-- Zendesk section -->
-    <div class="section-wrap">
-      <div class="section-label">Zendesk — open tickets by team</div>
-      <button class="info-btn" data-tip="Live open ticket counts from Zendesk, grouped by assignee group." data-update="Live — refreshes hourly">i</button>
-    </div>
-    <div class="metrics-row" id="zdMetrics" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"></div>
-
     <!-- Agent master report -->
     <div class="section-wrap">
       <div class="section-label">Agent master report</div>
@@ -296,7 +289,7 @@ thead th.col-agent,thead th.col-team{z-index:4}
               <th class="l col-team" rowspan="2">Team</th>
               <th colspan="2" style="color:var(--blue)">Live status</th>
               <th colspan="2" style="color:var(--green)">This week (calls)</th>
-              <th colspan="3" style="color:#be185d">Zendesk</th>
+              <th style="color:#be185d">Zendesk</th>
               <th>Score</th>
             </tr>
             <tr>
@@ -304,8 +297,6 @@ thead th.col-agent,thead th.col-team{z-index:4}
               <th style="color:var(--blue)">Substatus</th>
               <th style="color:var(--green)">Ans. inbound</th>
               <th style="color:var(--green)">Conn. outbound</th>
-              <th style="color:#be185d">Internal</th>
-              <th style="color:#be185d">Public</th>
               <th style="color:#be185d">Solved</th>
               <th style="color:var(--blue-mid)">Util %</th>
             </tr>
@@ -315,16 +306,6 @@ thead th.col-agent,thead th.col-team{z-index:4}
       </div>
     </div>
 
-    <!-- Zendesk ticket table -->
-    <div class="section-wrap">
-      <div class="section-label">Recent unsolved tickets</div>
-      <button class="info-btn" data-tip="Unsolved tickets from Zendesk updated in the last 24h." data-update="Live — refreshes hourly">i</button>
-    </div>
-    <div class="card" style="overflow-x:auto;margin-bottom:24px">
-      <table><thead><tr>
-        <th class="l">ID</th><th class="l">Subject</th><th class="l">Assignee</th><th class="l">Group</th><th class="l">Priority</th><th class="l">Created</th><th class="l">Updated</th>
-      </tr></thead><tbody id="zdTicketBody"></tbody></table>
-    </div>
   </div>
 </div>
 
@@ -496,19 +477,7 @@ function generateDemoData() {
     heatmaps[t.key] = hm;
   });
 
-  const zdGroups = teams.map(t => ({ name: t.label, open: 5 + Math.round(Math.random()*40), urgent: Math.round(Math.random()*8), color: t.color }));
-
-  const zdTickets = Array.from({length:12}, (_,i) => ({
-    id: 1000 + i,
-    subject: ['Login issue for freight partner','Invoice not generated','Onboarding call needed','API timeout errors','Password reset loop','Missing tracking data','Rate card query','Document upload failing','2FA not working','Dashboard access request','Billing discrepancy','Account merge request'][i],
-    assignee: agentNames[i % agentNames.length],
-    group: teams[i % teams.length].label,
-    priority: ['urgent','high','normal','low'][Math.floor(Math.random()*4)],
-    created_at: new Date(Date.now() - Math.random()*7*86400000).toISOString(),
-    updated_at: new Date(Date.now() - Math.random()*3600000).toISOString(),
-  }));
-
-  return { totals, dayOrder, dayData, teamSummary, agents, heatmaps, zdGroups, zdTickets, teams };
+  return { totals, dayOrder, dayData, teamSummary, agents, heatmaps, teams };
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -580,17 +549,14 @@ async function fetchLiveData() {
 
   try {
     const [usersResp, teamsResp, callsResp, availResp] = await Promise.all([
-      fetchAircall('/v1/users?per_page=50'),
+      fetchAircall('/v1/users?per_page=50'),        // includes teams[] array per user
       fetchAircall('/v1/teams?per_page=50'),
-      // Worker paginates calls server-side — one round-trip returns all pages
       fetchAircall(`/v1/calls?from=${from}&to=${now}`),
-      // V1 availabilities — current live status + substatus per user
       fetchAircall('/v1/users/availabilities').catch(() => ({ users: [] })),
     ]);
     aircallUsers   = usersResp.users  || [];
     aircallTeams   = teamsResp.teams  || [];
     rawCalls       = callsResp.calls  || [];
-    // availabilities lives under .users in the V1 response
     availabilities = availResp.users  || availResp.data || [];
     aircallOk = true;
     setApiStatus('ac', 'ok');
@@ -600,8 +566,6 @@ async function fetchLiveData() {
   }
 
   // Build availability map: user_id → { status, substatus }
-  // V1 /users/availabilities returns: { id, availability, substatus, ... }
-  // Substatus examples: out_for_lunch, in_training, doing_back_office, on_a_break
   const availMap = {};
   availabilities.forEach(a => {
     availMap[a.id] = {
@@ -610,23 +574,26 @@ async function fetchLiveData() {
     };
   });
 
+  // Build user maps — try both u.teams[] and u.team_name for compatibility
+  const userById = {};
+  const userTeam = {};
+  aircallUsers.forEach(u => {
+    userById[u.id] = u.name;
+    // V1 /users returns teams as an array of {id, name} objects
+    if (u.teams && u.teams.length)      userTeam[u.id] = u.teams[0].name;
+    else if (u.team_name)               userTeam[u.id] = u.team_name;
+    else if (u.team && u.team.name)     userTeam[u.id] = u.team.name;
+  });
+
   /* ── Process Aircall calls ── */
   const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const dayData  = { inbound:{}, outbound:{}, missed:{} };
   dayOrder.forEach(d => { dayData.inbound[d]=0; dayData.outbound[d]=0; dayData.missed[d]=0; });
 
-  const agentCallAgg = {}; // name → { inbound, outbound, in_call_sec }
+  const agentCallAgg = {}; // name → { inbound, outbound, in_call_sec, conn_out }
   const teamCallAgg  = {}; // team_name → { inbound, answered, outbound, connOut, missed }
-  const heatmapRaw   = {}; // teamId → { Mon: {8: count, ...}, ... }
-
-  // Build user id→name and id→team maps
-  const userById = {};
-  const userTeam = {};
-  aircallUsers.forEach(u => {
-    userById[u.id] = u.name;
-    if (u.teams && u.teams.length) userTeam[u.id] = u.teams[0].name;
-  });
+  const heatmapRaw   = {}; // teamKey → { Mon: {8: count, ...}, ... }
 
   rawCalls.forEach(call => {
     const day = dayNames[new Date(call.started_at * 1000).getDay()];
@@ -735,91 +702,62 @@ async function fetchLiveData() {
   /* ── Zendesk ── */
   document.getElementById('loadingMsg').textContent = 'Fetching Zendesk data…';
 
-  let zdGroups = [], zdTickets = [];
   try {
-    const [groupsData, ticketsResp, zdUsersData] = await Promise.all([
-      fetchZendesk('/api/v2/groups.json').catch(() => ({ groups: [] })),
-      // Worker intercepts /api/v2/tickets.json, runs Search, paginates, and slims
-      fetchZendesk('/api/v2/tickets.json?status=open&status=pending&sort_by=updated_at&sort_order=desc&per_page=100'),
+    // Fetch agent list and solved tickets in parallel
+    const [zdUsersResp, solvedResp] = await Promise.all([
       fetchAllZDPages('/api/v2/users.json?role=agent&per_page=100', 'users'),
+      fetchAllZDPages(
+        `/api/v2/search.json?query=type:ticket+status:solved+updated>${new Date(from*1000).toISOString().split('T')[0]}&per_page=100`,
+        'results'
+      ).catch(() => []),
     ]);
 
     setApiStatus('zd', 'ok');
 
-    const ticketsData = ticketsResp.tickets || [];
-    const zdUserById  = {};
-    (zdUsersData || []).forEach(u => { zdUserById[u.id] = u.name; });
+    // Build ZD user id → name map
+    const zdUserById = {};
+    (zdUsersResp || []).forEach(u => { zdUserById[u.id] = u.name; });
 
-    const zdGroupById = {};
-    (groupsData.groups || []).forEach(g => { zdGroupById[g.id] = g.name; });
-
-    // Group open ticket counts
-    const groupCounts = {};
-    (ticketsData || []).forEach(t => {
-      const gname = zdGroupById[t.group_id] || 'Unassigned';
-      if (!groupCounts[gname]) groupCounts[gname] = { open:0, urgent:0 };
-      groupCounts[gname].open++;
-      if (t.priority === 'urgent' || t.priority === 'high') groupCounts[gname].urgent++;
+    // Count solved tickets per agent
+    const agentZD = {};
+    (solvedResp || []).forEach(t => {
+      const name = zdUserById[t.assignee_id] || '';
+      if (!name) return;
+      if (!agentZD[name]) agentZD[name] = { solved: 0 };
+      agentZD[name].solved++;
     });
 
-    zdGroups = Object.entries(groupCounts).map(([name, c]) => ({ name, ...c, color: '#1d4ed8' }));
-
-    // Agent ZD map — count from tickets solved in window
-    const agentZD = {};
-    try {
-      const solved = await fetchAllZDPages(
-        `/api/v2/search.json?query=type:ticket+status:solved+updated>${new Date(from*1000).toISOString().split('T')[0]}&per_page=100`, 'results'
-      );
-      solved.forEach(t => {
-        const name = zdUserById[t.assignee_id] || '';
-        if (!name) return;
-        if (!agentZD[name]) agentZD[name] = { internal:0, public:0, solved:0 };
-        agentZD[name].solved++;
-      });
-    } catch(e) { /* ignore */ }
-
-    // Enrich agents with zd data
+    // Enrich agents with ZD solved count
     agents.forEach(a => {
-      if (agentZD[a.name]) {
-        a.zd = agentZD[a.name];
-        const comments = a.zd.internal + a.zd.public;
-        const zdProd = comments * CONFIG.COMMENT_TIME;
+      const zd = agentZD[a.name];
+      if (zd) {
+        a.zd = zd;
+        // Use solved count as a proxy for productivity score
+        const zdProd = zd.solved * CONFIG.COMMENT_TIME * 3;
         a.zdUtil = Math.min(Math.round(zdProd / CONFIG.CONTRACTED_SECS * 100), 100);
       }
     });
-
-    // Recent tickets for display
-    zdTickets = (ticketsData || []).slice(0, 20).map(t => ({
-      id: t.id,
-      subject: t.subject,
-      assignee: zdUserById[t.assignee_id] || '—',
-      group: zdGroupById[t.group_id] || '—',
-      priority: t.priority || 'normal',
-      created_at: t.created_at,
-      updated_at: t.updated_at,
-    }));
 
   } catch(e) {
     console.warn('Zendesk fetch failed:', e);
     setApiStatus('zd', 'err');
   }
 
-  // Build teams for heatmap tabs (use team names from teamSummary)
+  // Build teams for heatmap tabs
   const teams = teamSummary.map(t => ({ key: t.key, label: t.label }));
 
-  // Date range label
   const fromDate = new Date(from * 1000).toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
   const toDate   = new Date(now  * 1000).toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
   document.getElementById('dataRange').textContent = `Data range: ${fromDate} – ${toDate}`;
 
-  return { totals, dayOrder, dayData, teamSummary, agents, heatmaps, zdGroups, zdTickets, teams };
+  return { totals, dayOrder, dayData, teamSummary, agents, heatmaps, teams };
 }
 
 /* ══════════════════════════════════════════════════════════════════
    RENDER
    ══════════════════════════════════════════════════════════════════ */
 function renderDashboard() {
-  const { totals, dayOrder, dayData, teamSummary, agents, zdGroups, zdTickets, teams } = globalData;
+  const { totals, dayOrder, dayData, teamSummary, agents, teams } = globalData;
 
   /* Metrics */
   const mp = v => totals.total > 0 ? ((v/totals.total)*100).toFixed(1)+'% of total' : '—';
@@ -907,19 +845,6 @@ function renderDashboard() {
     renderHeatmap(currentHeatTeam);
   }
 
-  /* Zendesk metrics */
-  const zdMetEl = document.getElementById('zdMetrics');
-  zdMetEl.innerHTML = (zdGroups || []).length === 0
-    ? '<div style="color:var(--subtle);font-size:12px;padding:8px 0">No Zendesk data</div>'
-    : zdGroups.map(g => `
-        <div class="metric-card">
-          <div class="lbl">${g.name}</div>
-          <div class="val">${g.open}</div>
-          <div class="sub" style="color:${g.urgent>0?'#b45309':'var(--subtle)'}">
-            ${g.urgent > 0 ? g.urgent + ' urgent/high' : 'no urgent'}
-          </div>
-        </div>`).join('');
-
   /* Agent tabs */
   const agentTabsEl = document.getElementById('agentTabs');
   agentTabsEl.innerHTML = '<button class="tab active" data-team="all">All teams</button>';
@@ -939,23 +864,6 @@ function renderDashboard() {
     renderAgents(currentAgentTeam);
   });
   renderAgents(currentAgentTeam);
-
-  /* Zendesk ticket table */
-  const zdTicketBodyEl = document.getElementById('zdTicketBody');
-  if (!zdTickets || zdTickets.length === 0) {
-    zdTicketBodyEl.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--subtle);padding:1rem">No Zendesk ticket data</td></tr>';
-  } else {
-    const pCol = { urgent:'var(--red)', high:'var(--amber)', normal:'var(--muted)', low:'var(--subtle)' };
-    zdTicketBodyEl.innerHTML = zdTickets.map(t => `<tr>
-      <td class="l" style="color:var(--blue-mid);font-weight:500">#${t.id}</td>
-      <td class="l" style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${t.subject}</td>
-      <td class="l">${t.assignee}</td>
-      <td class="l">${t.group}</td>
-      <td class="l" style="color:${pCol[t.priority]||'var(--muted)'};font-weight:500">${t.priority}</td>
-      <td class="l">${fmtDate(t.created_at)}</td>
-      <td class="l">${fmtDateTime(t.updated_at)}</td>
-    </tr>`).join('');
-  }
 }
 
 /* ── Heatmap ── */
@@ -1011,8 +919,8 @@ function renderAgents(team) {
     const cs = scoreStyle(a.callUtil);
     const pw = a.partWeek ? '<span class="wp">part wk</span>' : '';
     const zdC = a.zd
-      ? `<td>${dv(a.zd.internal)}</td><td>${dv(a.zd.public)}</td><td style="font-weight:600;color:${a.zd.solved>0?'#be185d':'var(--subtle)'}">${a.zd.solved||'—'}</td>`
-      : '<td class="muted-txt">—</td><td class="muted-txt">—</td><td class="muted-txt">—</td>';
+      ? `<td style="font-weight:600;color:${a.zd.solved>0?'#be185d':'var(--subtle)'}">${a.zd.solved||'—'}</td>`
+      : '<td class="muted-txt">—</td>';
 
     // Live status pill
     const STATUS_STYLE = {
