@@ -727,42 +727,50 @@ function renderDashboard() {
   });
 
   const DAYS_OF_WEEK = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const cbHtml = Object.keys(cbByWeek).length > 0
-    ? Object.entries(cbByWeek).sort((a,b) => Number(a[0])-Number(b[0])).map(([week, d]) => {
-        const pct = d.total > 0 ? (d.calledBack / d.total * 100) : 0;
-        const avgPending = d.pendingCount > 0 ? (d.pendingSum / d.pendingCount) : 0;
-        const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
 
-        // Build 7-day calendar row
-        const dayMap = {};
-        d.days.forEach(day => { dayMap[day.date] = day; });
-        const sortedDays = d.days.map(dy => dy.date).sort();
-        const dayRows = sortedDays.map(date => {
-          const dy = dayMap[date];
-          const dPctCol = dy.rate >= 70 ? 'var(--green)' : dy.rate >= 50 ? 'var(--amber)' : dy.rate > 0 ? 'var(--red)' : 'var(--subtle)';
-          const dateObj = new Date(date);
-          const dayName = DAYS_OF_WEEK[(dateObj.getUTCDay() + 6) % 7];
-          const dateLabel = `${dayName} ${dateObj.getUTCDate()}/${dateObj.getUTCMonth()+1}`;
-          return `<tr class="cb-day-row">
-            <td class="l">${dateLabel}</td>
-            <td class="l">${dy.req||'—'}</td>
-            <td class="l" style="color:var(--green)">${dy.cb||'—'}</td>
-            <td class="l" style="color:var(--red)">${dy.na > 0 ? dy.na : '—'}</td>
-            <td class="l" style="color:${dPctCol};font-weight:600">${dy.rate ? dy.rate.toFixed(1)+'%' : '—'}</td>
-            <td class="l">${dy.pend ? dy.pend.toFixed(1)+' mins' : '—'}</td>
-          </tr>`;
-        }).join('');
+  function parseDateParts(dateStr) {
+    // dateStr = "2026-06-15"
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return null;
+    return new Date(Number(parts[0]), Number(parts[1])-1, Number(parts[2]));
+  }
 
-        return `<tr class="cb-week-row" onclick="this.classList.toggle('open');var next=this.nextElementSibling;if(next&&next.classList.contains('cb-day-rows')){next.style.display=next.style.display==='table-row-group'?'none':'table-row-group'}">
-          <td class="l"><strong>Week ${week}</strong></td>
-          <td class="l">${d.total||'—'}</td>
-          <td class="l" style="color:var(--green);font-weight:500">${d.calledBack||'—'}</td>
-          <td class="l" style="color:var(--red);font-weight:500">${d.notActioned > 0 ? d.notActioned : '—'}</td>
-          <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
-          <td class="l">${avgPending ? avgPending.toFixed(1)+' mins' : '—'}</td>
-        </tr><tbody class="cb-day-rows" style="display:none">${dayRows}</tbody>`;
-      }).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
+  let cbHtml = '';
+  if (Object.keys(cbByWeek).length > 0) {
+    Object.entries(cbByWeek).sort((a,b) => Number(a[0])-Number(b[0])).forEach(([week, d]) => {
+      const pct = d.total > 0 ? (d.calledBack / d.total * 100) : 0;
+      const avgPending = d.pendingCount > 0 ? (d.pendingSum / d.pendingCount) : 0;
+      const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+      const wkId = 'cbw-' + week;
+
+      cbHtml += `<tr class="cb-week-row" data-wk="${wkId}" onclick="toggleCbWeek('${wkId}',this)">
+        <td class="l"><strong>Week ${week}</strong></td>
+        <td class="l">${d.total||'—'}</td>
+        <td class="l" style="color:var(--green);font-weight:500">${d.calledBack||'—'}</td>
+        <td class="l" style="color:var(--red);font-weight:500">${d.notActioned > 0 ? d.notActioned : '—'}</td>
+        <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
+        <td class="l">${avgPending ? avgPending.toFixed(1)+' mins' : '—'}</td>
+      </tr>`;
+
+      const sortedDays = d.days.map(dy => dy.date).sort();
+      sortedDays.forEach(date => {
+        const dy = d.days.find(x => x.date === date);
+        const dPctCol = dy.rate >= 70 ? 'var(--green)' : dy.rate >= 50 ? 'var(--amber)' : dy.rate > 0 ? 'var(--red)' : 'var(--subtle)';
+        const dateObj = parseDateParts(date);
+        const dayName = dateObj ? DAYS_OF_WEEK[(dateObj.getDay() + 6) % 7] : '?';
+        const dateLabel = dateObj ? `${dayName} ${dateObj.getDate()}/${dateObj.getMonth()+1}` : date;
+        cbHtml += `<tr class="cb-day-row" data-parent="${wkId}" style="display:none">
+          <td class="l" style="padding-left:20px;color:var(--muted)">${dateLabel}</td>
+          <td class="l">${dy.req||'—'}</td>
+          <td class="l" style="color:var(--green)">${dy.cb||'—'}</td>
+          <td class="l" style="color:var(--red)">${dy.na > 0 ? dy.na : '—'}</td>
+          <td class="l" style="color:${dPctCol};font-weight:600">${dy.rate ? dy.rate.toFixed(1)+'%' : '—'}</td>
+          <td class="l">${dy.pend ? dy.pend.toFixed(1)+' mins' : '—'}</td>
+        </tr>`;
+      });
+    });
+  }
+  if (!cbHtml) cbHtml = '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
   document.getElementById('cbBody').innerHTML = cbHtml;
 
   // Tab listeners
@@ -869,6 +877,16 @@ function renderAgents(team) {
       <td><span class="score-pill" style="background:${zs.bg};color:${zs.col}">${a.zdUtil}%</span></td>
     </tr>`;
   }).join('');
+}
+
+// ============================================================
+// CALLBACK EXPAND/COLLAPSE
+// ============================================================
+function toggleCbWeek(wkId, headerRow) {
+  const rows = document.querySelectorAll(`tr[data-parent="${wkId}"]`);
+  const isOpen = headerRow.classList.contains('open');
+  headerRow.classList.toggle('open');
+  rows.forEach(r => r.style.display = isOpen ? 'none' : 'table-row');
 }
 
 // ============================================================
