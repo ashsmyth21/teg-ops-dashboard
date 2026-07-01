@@ -729,10 +729,20 @@ function renderDashboard() {
   const DAYS_OF_WEEK = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
   function parseDateParts(dateStr) {
-    // dateStr = "2026-06-15"
-    const parts = dateStr.split('-');
-    if (parts.length !== 3) return null;
-    return new Date(Number(parts[0]), Number(parts[1])-1, Number(parts[2]));
+    if (!dateStr) return null;
+    // Handle Excel date serial number (e.g. 46190)
+    if (typeof dateStr === 'number') {
+      // Excel serial: days since 1900-01-00 (with leap year bug)
+      const d = new Date((dateStr - 25569) * 86400 * 1000);
+      return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    }
+    // Handle string "2026-06-15" or "15/06/2026"
+    const s = String(dateStr).trim();
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return new Date(Number(iso[1]), Number(iso[2])-1, Number(iso[3]));
+    const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (dmy) return new Date(Number(dmy[3]), Number(dmy[2])-1, Number(dmy[1]));
+    return null;
   }
 
   let cbHtml = '';
