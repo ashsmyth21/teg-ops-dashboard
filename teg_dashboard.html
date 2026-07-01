@@ -544,10 +544,10 @@ async function loadDashboard() {
     });
 
     // ---- AI summaries map ----
-    const aiMap = {};
+    const _aiMap = {};
     aiRows.forEach(r => {
       const name = String(r['Agent name']||'').trim();
-      if (name) aiMap[name] = String(r['Summary']||'');
+      if (name) _aiMap[name] = String(r['Summary']||'');
     });
 
     // ---- Agent stats aggregation ----
@@ -578,7 +578,7 @@ async function loadDashboard() {
     const agents = Object.entries(agentAgg).map(([name, s]) => {
       const cv  = cvMap[name] || null;
       const zd  = zdMap[name] || null;
-      const ai  = aiMap[name] || null;
+      const ai  = _aiMap[name] || null;
       const inb = cv ? (Number(cv['Answered inbound calls']||cv['Answered inbound']||0)) : 0;
       const out = cv ? (Number(cv['Connected outbound calls']||cv['Connected outbound']||0)) : 0;
       const gs  = k => s[k] || 0;
@@ -627,7 +627,7 @@ async function loadDashboard() {
       const t = String(r['team']||'').trim();
       if (name && t) agentTeamMap[name] = t;
     });
-    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap };
+    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap };
 
     // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
     // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
