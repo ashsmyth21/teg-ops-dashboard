@@ -294,15 +294,14 @@ thead th.col-agent,thead th.col-team{z-index:4}
             <tr>
               <th class="l col-agent" rowspan="2">Agent</th>
               <th class="l col-team" rowspan="2">Team</th>
-              <th colspan="3" style="color:var(--blue)">Aircall</th>
-              <th colspan="2" style="color:var(--green)">Call volumes</th>
+              <th colspan="2" style="color:var(--blue)">Live status</th>
+              <th colspan="2" style="color:var(--green)">This week (calls)</th>
               <th colspan="3" style="color:#be185d">Zendesk</th>
               <th>Score</th>
             </tr>
             <tr>
-              <th style="color:var(--blue)">Available</th>
-              <th style="color:var(--blue)">In call</th>
-              <th style="color:var(--blue)">ACW</th>
+              <th style="color:var(--blue)">Status</th>
+              <th style="color:var(--blue)">Substatus</th>
               <th style="color:var(--green)">Ans. inbound</th>
               <th style="color:var(--green)">Conn. outbound</th>
               <th style="color:#be185d">Internal</th>
@@ -575,26 +574,40 @@ async function fetchLiveData() {
   const now  = Math.floor(Date.now() / 1000);
   const from = now - CONFIG.LOOKBACK_DAYS * 86400;
 
-  /* ── Aircall: users + teams + calls in parallel ── */
-  let aircallUsers = [], aircallTeams = [], rawCalls = [];
+  /* ── Aircall: users + teams + calls + V2 availabilities in parallel ── */
+  let aircallUsers = [], aircallTeams = [], rawCalls = [], availabilities = [];
   let aircallOk = false;
 
   try {
-    const [usersResp, teamsResp, callsResp] = await Promise.all([
+    const [usersResp, teamsResp, callsResp, availResp] = await Promise.all([
       fetchAircall('/v1/users?per_page=50'),
       fetchAircall('/v1/teams?per_page=50'),
       // Worker paginates calls server-side — one round-trip returns all pages
       fetchAircall(`/v1/calls?from=${from}&to=${now}`),
+      // V2 availabilities — current live status + substatus per user
+      fetchAircall('/v2/users/availabilities').catch(() => ({ data: [] })),
     ]);
-    aircallUsers = usersResp.users  || [];
-    aircallTeams = teamsResp.teams  || [];
-    rawCalls     = callsResp.calls  || [];
+    aircallUsers   = usersResp.users  || [];
+    aircallTeams   = teamsResp.teams  || [];
+    rawCalls       = callsResp.calls  || [];
+    availabilities = availResp.data   || availResp.users || [];
     aircallOk = true;
     setApiStatus('ac', 'ok');
   } catch(e) {
     console.warn('Aircall fetch failed:', e);
     setApiStatus('ac', 'err');
   }
+
+  // Build availability map: user_id → { status, substatus }
+  // Substatus examples: out_for_lunch, in_training, doing_back_office,
+  //                     on_a_break, do_not_disturb, after_call_work
+  const availMap = {};
+  availabilities.forEach(a => {
+    availMap[a.id] = {
+      status:    a.availability    || a.status    || 'offline',
+      substatus: a.substatus_since ? a.substatus  : (a.substatus || null),
+    };
+  });
 
   /* ── Process Aircall calls ── */
   const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -691,39 +704,30 @@ async function fetchLiveData() {
     heatmaps[teamKey] = hm;
   });
 
-  /* ── Aircall: availability stats (plan-dependent endpoint) ── */
-  let availStats = {};
-  if (aircallOk) {
-    try {
-      const statsResp = await fetchAircall(`/v1/stats/user/availability?from=${from}&to=${now}`);
-      if (statsResp && statsResp.data) {
-        statsResp.data.forEach(s => {
-          availStats[s.user_name] = {
-            available_sec: s.available_duration         || 0,
-            in_call_sec:   s.in_call_duration           || 0,
-            acw_sec:       s.after_call_work_duration   || 0,
-          };
-        });
-      }
-    } catch(e) { /* stats endpoint not included on all Aircall plans — silent skip */ }
-  }
-
-  // Build agents list from user data
+  // Build agents list — call volumes from /v1/calls, current status from /v2/users/availabilities
   const agents = aircallUsers.map(u => {
-    const ca   = agentCallAgg[u.name] || {};
-    const av   = availStats[u.name]   || {};
-    const in_call  = ca.in_call_sec || av.in_call_sec || 0;
-    const avail    = av.available_sec || 0;
-    const acw      = av.acw_sec || 0;
-    const inbound  = ca.inbound  || 0;
-    const outbound = ca.outbound || 0;
+    const ca        = agentCallAgg[u.name] || {};
+    const av        = availMap[u.id]       || {};
+    const in_call   = ca.in_call_sec || 0;
+    const inbound   = ca.inbound   || 0;
+    const outbound  = ca.outbound  || 0;
     const allowed_acw = (inbound + outbound) * 180;
-    const excess_acw  = Math.max(0, acw - allowed_acw);
-    const callProd    = in_call + Math.min(acw, allowed_acw);
+    const callProd    = in_call;
     const callUtil    = Math.min(Math.round(callProd / CONFIG.CONTRACTED_SECS * 100), 100);
-    const team = userTeam[u.id] || '—';
-    return { name: u.name, team, in_call, available: avail, after_call_work: acw, allowed_acw, excess_acw,
-             inbound_calls: inbound, outbound_calls: outbound, conn_out: ca.conn_out || 0, callUtil, zdUtil: 0, partWeek: false, zd: null };
+    const team        = userTeam[u.id] || '—';
+
+    // Current live status from V2 availabilities
+    const status    = av.status    || 'offline';
+    const substatus = av.substatus || null;
+
+    return {
+      name: u.name, team, in_call, available: 0, after_call_work: 0,
+      allowed_acw, excess_acw: 0,
+      inbound_calls: inbound, outbound_calls: outbound,
+      conn_out: ca.conn_out || 0, callUtil, zdUtil: 0,
+      partWeek: false, zd: null,
+      status, substatus,   // live snapshot
+    };
   }).filter(a => a.inbound_calls + a.outbound_calls + a.in_call > 0)
     .sort((a,b) => b.callUtil - a.callUtil);
 
@@ -1003,18 +1007,39 @@ function renderAgents(team) {
   document.getElementById('agentBody').innerHTML = rows.map(a => {
     const tc = TEAM_COLORS[a.team] || '#888';
     const sh = TEAM_SHORT[a.team] || a.team;
-    const bw = maxCallSec > 0 ? Math.round((a.in_call||0)/maxCallSec*40) : 0;
     const cs = scoreStyle(a.callUtil);
     const pw = a.partWeek ? '<span class="wp">part wk</span>' : '';
     const zdC = a.zd
       ? `<td>${dv(a.zd.internal)}</td><td>${dv(a.zd.public)}</td><td style="font-weight:600;color:${a.zd.solved>0?'#be185d':'var(--subtle)'}">${a.zd.solved||'—'}</td>`
       : '<td class="muted-txt">—</td><td class="muted-txt">—</td><td class="muted-txt">—</td>';
+
+    // Live status pill
+    const STATUS_STYLE = {
+      available:       { bg:'#f0fdf4', col:'#15803d', label:'Available' },
+      in_call:         { bg:'#eff6ff', col:'#1d4ed8', label:'In call' },
+      after_call_work: { bg:'#fffbeb', col:'#b45309', label:'ACW' },
+      do_not_disturb:  { bg:'#fef2f2', col:'#dc2626', label:'DND' },
+      offline:         { bg:'#f3f4f6', col:'#9ca3af', label:'Offline' },
+    };
+    const SUBSTATUS_LABEL = {
+      out_for_lunch:      '🥪 Lunch',
+      in_training:        '📚 Training',
+      doing_back_office:  '🗂 Back office',
+      on_a_break:         '☕ Break',
+      investigation:      '🔍 Investigation',
+    };
+    const ss = STATUS_STYLE[a.status] || STATUS_STYLE.offline;
+    const statusPill = `<span class="score-pill" style="background:${ss.bg};color:${ss.col};font-size:10px">${ss.label}</span>`;
+    const subLabel = a.substatus ? (SUBSTATUS_LABEL[a.substatus] || a.substatus.replace(/_/g,' ')) : '—';
+    const subCell  = a.substatus
+      ? `<span style="font-size:10px;color:var(--muted)">${subLabel}</span>`
+      : `<span class="muted-txt">—</span>`;
+
     return `<tr>
       <td class="l col-agent" style="font-weight:500">${a.name}${pw}</td>
       <td class="l col-team"><span class="team-pill" style="background:${tc}18;color:${tc}">${sh}</span></td>
-      <td>${fh(fmtHrs(a.available))}</td>
-      <td><span class="bar-mini" style="width:${bw}px"></span>${fh(fmtHrs(a.in_call))}</td>
-      <td>${fh(fmtHrs(a.after_call_work))}</td>
+      <td style="text-align:left">${statusPill}</td>
+      <td style="text-align:left">${subCell}</td>
       <td>${dv(a.inbound_calls)}</td>
       <td>${dv(a.outbound_calls)}</td>
       ${zdC}
