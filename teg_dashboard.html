@@ -3,37 +3,109 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TEG Ops Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<title>TEG Ops Dashboard — Live</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     CONFIGURATION — two values to fill in, nothing else
+     ══════════════════════════════════════════════════════════════════ -->
+<script>
+const CONFIG = {
+  /*
+   * WORKER_URL — your new Cloudflare Worker URL.
+   * Deploy teg_ops_worker.js, then paste the *.workers.dev URL here.
+   * All Aircall and Zendesk credentials live in the Worker as secrets;
+   * none of them appear in this file.
+   */
+  WORKER_URL: 'https://tegopsworkerjs.testteg1234.workers.dev',
+
+  /*
+   * APP_PASSCODE — must match the APP_PASSCODE secret in your Worker.
+   * This is just an access guard for the Worker endpoint; do not commit
+   * this file to a public repo with a real value here.
+   * If you host on GitHub Pages privately or behind Cloudflare Access,
+   * leave this as the same value you set in the Worker secret.
+   */
+  APP_PASSCODE: 'TEG_OPS_dasboard26!',  // e.g. 'teg-ops-2024'
+
+  /* Hourly auto-refresh */
+  REFRESH_INTERVAL_MS: 60 * 60 * 1000,
+
+  /* Agent productivity constants — match your HR policy */
+  CONTRACTED_SECS: 135000,   // 37.5h per week in seconds
+  COMMENT_TIME:    180,       // ACW seconds credited per Zendesk comment
+  LUNCH_EXPECTED:  18000,     // expected lunch duration (5h = 18000s)
+  LUNCH_TOLERANCE: 300,       // ±5 min tolerance
+  LOOKBACK_DAYS:   7,         // days of Aircall history to fetch
+};
+
+/* Team colour map — keep in sync with your Aircall team names */
+const TEAM_COLORS = {
+  'Support + Revered': '#1d4ed8',
+  'Support':           '#1d4ed8',
+  'Revered':           '#0e7490',
+  'Onboarding':        '#15803d',
+  'Risk and compliance':'#b45309',
+  'Key Accounts VIP Response Team': '#be185d',
+  'Credit Control':    '#7c3aed',
+  'Smartbook members': '#374151',
+  '2nd line (Tech support team)': '#c2410c',
+};
+const TEAM_SHORT = {
+  'Support + Revered': 'Support+Rev',
+  'Support':           'Support',
+  'Revered':           'Revered',
+  'Onboarding':        'Onboarding',
+  'Risk and compliance':'Risk',
+  'Key Accounts VIP Response Team': 'Key accts',
+  'Credit Control':    'Credit ctrl',
+  'Smartbook members': 'Smartbook',
+  '2nd line (Tech support team)': '2nd line',
+};
+</script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f4f5f7;--surface:#ffffff;--border:#e2e4e9;
+  --bg:#f4f5f7;--surface:#fff;--border:#e2e4e9;
   --text:#111318;--muted:#6b7280;--subtle:#9ca3af;
   --blue:#1d4ed8;--blue-light:#eff6ff;--blue-mid:#3b82f6;
   --green:#15803d;--green-light:#f0fdf4;
   --red:#dc2626;--red-light:#fef2f2;
   --amber:#b45309;--amber-light:#fffbeb;
-  --support:#1d4ed8;--onboarding:#15803d;--risk:#b45309;
-  --credit:#7c3aed;--keyaccts:#be185d;--smartbook:#374151;--secondline:#c2410c;
+  --purple:#7c3aed;
 }
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+
+/* ── Top bar ── */
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
 .topbar-left{display:flex;align-items:center;gap:12px}
 .topbar h1{font-size:15px;font-weight:600;letter-spacing:-.01em}
-.topbar .week-badge{background:var(--blue-light);color:var(--blue);font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px}
+.live-badge{background:#f0fdf4;color:#15803d;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;display:flex;align-items:center;gap:4px}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#15803d;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.demo-badge{background:#fffbeb;color:#b45309;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px}
 .topbar-right{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
 .refresh-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
 .refresh-btn:hover{background:var(--bg)}
+.countdown{font-size:11px;color:var(--subtle)}
+
+/* ── Layout ── */
 .dash{padding:20px 24px;max-width:1700px;margin:0 auto}
-.section-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px}
+.section-wrap{display:flex;align-items:center;gap:6px;margin:20px 0 10px}
+.section-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.info-btn{width:15px;height:15px;border-radius:50%;background:var(--border);color:var(--muted);font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border:none;flex-shrink:0}
+.info-btn:hover{background:var(--blue);color:#fff}
+
+/* ── Cards ── */
 .metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:4px}
 .metric-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
 .metric-card .lbl{font-size:11px;color:var(--muted);margin-bottom:2px}
 .metric-card .val{font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
 .metric-card .sub{font-size:11px;color:var(--subtle);margin-top:3px}
+.metric-card .trend{font-size:11px;margin-top:3px}
+
+/* ── Team grid ── */
 .team-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:4px}
 .team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
 .team-card .tc-name{font-size:11px;font-weight:600;margin-bottom:8px}
@@ -41,639 +113,756 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .team-card .tc-val{font-weight:500;color:var(--text)}
 .tc-bar{height:3px;border-radius:2px;background:var(--border);margin:5px 0 4px}
 .tc-fill{height:3px;border-radius:2px}
+
+/* ── Charts ── */
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px}
 .chart-wrap{position:relative;height:200px}
+
+/* ── Heatmap ── */
 .tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
 .tab{padding:4px 10px;font-size:11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--muted);font-weight:500}
 .tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
 .heat-grid{display:grid;gap:2px}
 .heat-cell{height:24px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px}
 .heat-head{height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);font-weight:500}
+
+/* ── Agent table ── */
 table{width:100%;border-collapse:collapse}
 th{font-size:10px;font-weight:500;color:var(--muted);text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface)}
 th.l{text-align:left}
 td{border-bottom:1px solid var(--border);padding:5px 6px;font-size:11px;white-space:nowrap;text-align:right}
 td.l{text-align:left}
+thead th{position:sticky;top:0;z-index:3;background:var(--surface)}
+th.col-agent,td.col-agent{position:sticky;left:0;min-width:160px;max-width:160px;background:var(--surface);z-index:2}
+th.col-team,td.col-team{position:sticky;left:160px;min-width:110px;max-width:110px;background:var(--surface);z-index:2;border-right:2px solid var(--border)}
+thead th.col-agent,thead th.col-team{z-index:4}
+.hide-team th.col-team,.hide-team td.col-team{display:none}
+.hide-team th.col-agent,.hide-team td.col-agent{left:0}
+
+/* ── Pills & badges ── */
 .team-pill{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:500}
 .score-pill{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:600}
 .bar-mini{height:5px;border-radius:3px;background:var(--blue-mid);display:inline-block;vertical-align:middle;margin-right:3px}
 .excess-pill{display:inline-block;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:600;background:var(--red-light);color:var(--red);margin-left:2px}
 .wp{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:600;background:var(--amber-light);color:var(--amber);margin-left:3px}
 .flag{display:inline-block;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:500;margin-left:2px}
-.muted{color:var(--subtle)}
+.muted-txt{color:var(--subtle)}
 
-/* Section tooltips */
-.section-wrap{display:flex;align-items:center;gap:6px;margin:20px 0 10px}
-.section-wrap .section-label{margin:0}
-.info-btn{width:15px;height:15px;border-radius:50%;background:var(--border);color:var(--muted);
-  font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;
-  cursor:pointer;border:none;flex-shrink:0;line-height:1}
-.info-btn:hover{background:var(--blue);color:#fff}
-.section-tooltip{
-  position:fixed;z-index:9998;
-  background:#1e2433;color:#e8eaf0;
-  border-radius:8px;padding:10px 13px;
-  max-width:280px;font-size:11px;line-height:1.5;
-  box-shadow:0 4px 20px rgba(0,0,0,.25);
-  pointer-events:none;opacity:0;transition:opacity .15s;
-}
-.section-tooltip.visible{opacity:1}
-.section-tooltip-title{font-size:9px;font-weight:700;color:#6b7a99;
-  text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
-.section-tooltip-update{font-size:10px;color:#6b7a99;margin-top:5px;
-  border-top:1px solid #2d3548;padding-top:5px}
+/* ── Status panel ── */
+.status-panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap}
+.status-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.status-dot{width:8px;height:8px;border-radius:50%}
+.status-dot.ok{background:#15803d}
+.status-dot.err{background:#dc2626}
+.status-dot.loading{background:#b45309;animation:pulse 1s infinite}
+
+/* ── Config warning ── */
+.config-warn{background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:16px 20px;margin:20px 0;color:#b45309}
+.config-warn h2{font-size:14px;font-weight:600;margin-bottom:8px}
+.config-warn code{background:#fef9c3;border-radius:3px;padding:1px 5px;font-size:12px;font-family:monospace}
+.config-warn ol{padding-left:20px;margin-top:8px;line-height:2}
+
+/* ── Loading / error ── */
 .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:var(--muted)}
 .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--blue-mid);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .error-box{background:var(--red-light);border:1px solid #fecaca;border-radius:8px;padding:16px;color:var(--red);margin:20px}
 
-/* AI Summary tooltip */
-.ai-tooltip{
-  position:fixed;z-index:9999;
-  background:#1e2433;color:#e8eaf0;
-  border-radius:10px;padding:12px 14px;
-  max-width:320px;font-size:12px;line-height:1.55;
-  box-shadow:0 8px 32px rgba(0,0,0,.28);
-  pointer-events:none;opacity:0;
-  transition:opacity .15s;
-}
-.ai-tooltip.visible{opacity:1}
-.ai-tooltip-label{font-size:9px;font-weight:600;color:#6b7a99;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
-tr.has-summary{cursor:pointer}
-tr.has-summary:hover td{background:#f8faff}
+/* ── Section tooltip ── */
+.section-tooltip{position:fixed;z-index:9998;background:#1e2433;color:#e8eaf0;border-radius:8px;padding:10px 13px;max-width:280px;font-size:11px;line-height:1.5;box-shadow:0 4px 20px rgba(0,0,0,.25);pointer-events:none;opacity:0;transition:opacity .15s}
+.section-tooltip.visible{opacity:1}
+.section-tooltip-title{font-size:9px;font-weight:700;color:#6b7a99;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
 
-/* ── Sticky Agent + Team columns ── */
-thead th{position:sticky;top:0;z-index:3;background:var(--surface)}
-th.col-agent,
-td.col-agent {
-  position: sticky;
-  left: 0;
-  min-width: 170px;
-  max-width: 170px;
-  background: var(--surface);
-  z-index: 2;
-}
-th.col-team,
-td.col-team {
-  position: sticky;
-  left: 170px;
-  min-width: 110px;
-  max-width: 110px;
-  background: var(--surface);
-  z-index: 2;
-  border-right: 2px solid var(--border);
-}
-/* Ensure sticky headers sit above sticky cells */
-thead th.col-agent,
-thead th.col-team {
-  z-index: 3;
-}
-
-/* Hide Team column when a team filter is active */
-.hide-team th.col-team,
-.hide-team td.col-team {
-  display: none;
-}
-/* When team col hidden, shift agent sticky left to 0 (it already is) */
-.hide-team th.col-agent,
-.hide-team td.col-agent {
-  left: 0;
-}
+/* ── Callback ── */
+#cbBody tr:nth-child(even) td{background:#fafafa}
 </style>
 </head>
 <body>
 
 <div id="loadingScreen" class="loading">
   <div class="spinner"></div>
-  <div>Loading dashboard data…</div>
+  <div id="loadingMsg">Connecting to Aircall &amp; Zendesk…</div>
+</div>
+
+<div id="configWarn" style="display:none;padding:20px 24px">
+  <div class="config-warn">
+    <h2>⚙ Configuration required</h2>
+    <p>Open this file in a text editor and fill in two values at the top of the <code>CONFIG</code> block:</p>
+    <ol>
+      <li>Deploy <code>teg_ops_worker.js</code> to Cloudflare Workers and add your 7 secrets (see the worker file header). Then set <code>WORKER_URL</code> to the <code>*.workers.dev</code> URL.</li>
+      <li>Set <code>APP_PASSCODE</code> to the same value you put in the Worker's <code>APP_PASSCODE</code> secret. All Aircall and Zendesk credentials stay in the Worker — they never appear here.</li>
+    </ol>
+    <p style="margin-top:8px">Running in <strong>demo mode</strong> — showing sample data. Fill in the config to go live.</p>
+    <button onclick="document.getElementById('configWarn').style.display='none';loadDashboard()" style="margin-top:12px;padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">Continue with demo data →</button>
+  </div>
 </div>
 
 <div id="app" style="display:none">
   <div class="topbar">
     <div class="topbar-left">
       <h1>TEG Ops Dashboard</h1>
-      <span class="week-badge" id="weekBadge">Week —</span>
+      <span id="liveBadge" class="live-badge"><span class="live-dot"></span> Live</span>
+      <span id="demoBadge" class="demo-badge" style="display:none">Demo data</span>
     </div>
     <div class="topbar-right">
-      <span id="lastUpdated">—</span>
-      <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
+      <span id="lastUpdated" class="countdown">—</span>
+      <span id="nextRefresh" class="countdown"></span>
+      <button class="refresh-btn" onclick="triggerRefresh()">↻ Refresh now</button>
     </div>
   </div>
 
   <div class="dash">
-    <div class="section-wrap"><div class="section-label">Company overview</div><button class="info-btn" data-tip="Total, missed, inbound and outbound call counts for the current week (Mon–Sun)." data-update="Updated every Monday at 6am">i</button></div>
+    <!-- API status -->
+    <div class="status-panel">
+      <div class="status-item"><div id="acStatus" class="status-dot loading"></div><span>Aircall</span></div>
+      <div class="status-item"><div id="zdStatus" class="status-dot loading"></div><span>Zendesk</span></div>
+      <div class="status-item" style="margin-left:auto;font-size:11px;color:var(--subtle)" id="dataRange">—</div>
+    </div>
+
+    <!-- Company overview -->
+    <div class="section-wrap">
+      <div class="section-label">Company overview</div>
+      <button class="info-btn" data-tip="Live call counts from Aircall for the last 7 days. Updates every hour." data-update="Live — refreshes hourly">i</button>
+    </div>
     <div class="metrics-row">
-      <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub">Mon–Sun</div></div>
+      <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub">Last 7 days</div></div>
       <div class="metric-card"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div>
       <div class="metric-card"><div class="lbl">Inbound</div><div class="val" id="mInbound">—</div><div class="sub" id="mInboundPct">—</div></div>
       <div class="metric-card"><div class="lbl">Outbound</div><div class="val" id="mOutbound">—</div><div class="sub" id="mOutboundPct">—</div></div>
     </div>
 
-    <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="Updated every Monday at 6am">i</button></div>
+    <!-- Team overview -->
+    <div class="section-wrap">
+      <div class="section-label">Team overview</div>
+      <button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate from Aircall." data-update="Live — refreshes hourly">i</button>
+    </div>
     <div id="teamGrid" class="team-grid"></div>
 
-    <div class="section-wrap"><div class="section-label">Call volume by day</div><button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day of the week." data-update="Updated every Monday at 6am">i</button></div>
+    <!-- Call volume by day -->
+    <div class="section-wrap">
+      <div class="section-label">Call volume by day</div>
+      <button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day." data-update="Live — refreshes hourly">i</button>
+    </div>
     <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
 
+    <!-- Charts row -->
     <div class="two-col">
-      <div class="card"><div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
-      <div class="card"><div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team." data-update="Updated every Monday at 6am">i</button></div><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
-    </div>
-
-    <div class="section-wrap"><div class="section-label">Inbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of inbound call volume by hour (8am–5pm) and day of week. Darker = busier." data-update="Updated every Monday at 6am">i</button></div>
-    <div class="tabs" id="heatTabs">
-      <button class="tab active" data-team="support">Support + Revered</button>
-      <button class="tab" data-team="onboarding">Onboarding</button>
-      <button class="tab" data-team="risk">Risk</button>
-      <button class="tab" data-team="keyaccounts">Key accounts</button>
-      <button class="tab" data-team="smartbook">Smartbook</button>
-    </div>
-    <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
-
-    <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
-    <div class="tabs" id="agentTabs">
-      <button class="tab active" data-team="all">All teams</button>
-      <button class="tab" data-team="Support + Revered">Support + Revered</button>
-      <button class="tab" data-team="Onboarding">Onboarding</button>
-      <button class="tab" data-team="Risk and compliance">Risk</button>
-      <button class="tab" data-team="Key Accounts VIP Response Team">Key accounts</button>
-      <button class="tab" data-team="Credit Control">Credit control</button>
-      <button class="tab" data-team="Smartbook members">Smartbook</button>
-      <button class="tab" data-team="2nd line (Tech support team)">2nd line</button>
-    </div>
-    <div class="card" style="padding:0;margin-bottom:12px;overflow:hidden">
-      <div style="overflow:auto;max-height:480px;border-radius:8px">
-      <table id="agentTable" style="min-width:1300px">
-        <thead>
-          <tr>
-            <th class="l col-agent" rowspan="2">Agent</th>
-            <th class="l col-team" rowspan="2">Team</th>
-            <th colspan="9" style="color:var(--blue)">Aircall availability</th>
-            <th colspan="3" style="color:var(--green)">Call volumes</th>
-            <th colspan="3" style="color:var(--keyaccts)">Zendesk</th>
-            <th colspan="2">Score</th>
-          </tr>
-          <tr>
-            <th style="color:var(--blue)">Available</th>
-            <th style="color:var(--blue)">In call</th>
-            <th style="color:var(--blue)">ACW</th>
-            <th style="color:var(--blue)">Allowed ACW</th>
-            <th style="color:var(--red)">Excess ACW</th>
-            <th style="color:var(--green)">Investigation</th>
-            <th style="color:var(--blue)">Back office</th>
-            <th style="color:var(--credit)">Training</th>
-            <th style="color:var(--amber)">Lunch</th>
-            <th style="color:var(--green)">Ans. inbound</th>
-            <th style="color:var(--green)">Conn. outbound</th>
-            <th style="color:var(--green)">Outbound</th>
-            <th style="color:var(--keyaccts)">Internal</th>
-            <th style="color:var(--keyaccts)">Public</th>
-            <th style="color:var(--keyaccts)">Solved</th>
-            <th style="color:var(--blue-mid)">Call %</th>
-            <th style="color:var(--keyaccts)">ZD %</th>
-          </tr>
-        </thead>
-        <tbody id="agentBody"></tbody>
-      </table>
+      <div class="card">
+        <div class="section-wrap" style="margin-top:0">
+          <div class="section-label">Inbound answer rate</div>
+          <button class="info-btn" data-tip="Percentage of inbound calls answered per team. Green ≥70%, amber ≥50%, red below." data-update="Live — refreshes hourly">i</button>
+        </div>
+        <div class="chart-wrap"><canvas id="answerChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="section-wrap" style="margin-top:0">
+          <div class="section-label">Outbound connection rate</div>
+          <button class="info-btn" data-tip="Percentage of outbound calls that connected (>10s) per team." data-update="Live — refreshes hourly">i</button>
+        </div>
+        <div class="chart-wrap"><canvas id="outboundChart"></canvas></div>
       </div>
     </div>
 
-    <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Callers who pressed * to request a callback. Shows total requests, how many were called back, and average pending time." data-update="Updated every Monday at 6am">i</button></div>
+    <!-- Heatmap -->
+    <div class="section-wrap">
+      <div class="section-label">Inbound calls by hour — weekdays</div>
+      <button class="info-btn" data-tip="Heatmap of inbound call volume by hour (8am–6pm) and day of week. Darker = busier." data-update="Live — refreshes hourly">i</button>
+    </div>
+    <div class="tabs" id="heatTabs"></div>
+    <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
+
+    <!-- Zendesk section -->
+    <div class="section-wrap">
+      <div class="section-label">Zendesk — open tickets by team</div>
+      <button class="info-btn" data-tip="Live open ticket counts from Zendesk, grouped by assignee group." data-update="Live — refreshes hourly">i</button>
+    </div>
+    <div class="metrics-row" id="zdMetrics" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"></div>
+
+    <!-- Agent master report -->
+    <div class="section-wrap">
+      <div class="section-label">Agent master report</div>
+      <button class="info-btn" data-tip="Per-agent Aircall availability, call volumes and Zendesk activity." data-update="Live — refreshes hourly">i</button>
+    </div>
+    <div class="tabs" id="agentTabs">
+      <button class="tab active" data-team="all">All teams</button>
+    </div>
+    <div class="card" style="padding:0;margin-bottom:12px;overflow:hidden">
+      <div style="overflow:auto;max-height:480px;border-radius:8px">
+        <table id="agentTable" style="min-width:1100px">
+          <thead>
+            <tr>
+              <th class="l col-agent" rowspan="2">Agent</th>
+              <th class="l col-team" rowspan="2">Team</th>
+              <th colspan="3" style="color:var(--blue)">Aircall</th>
+              <th colspan="2" style="color:var(--green)">Call volumes</th>
+              <th colspan="3" style="color:#be185d">Zendesk</th>
+              <th>Score</th>
+            </tr>
+            <tr>
+              <th style="color:var(--blue)">Available</th>
+              <th style="color:var(--blue)">In call</th>
+              <th style="color:var(--blue)">ACW</th>
+              <th style="color:var(--green)">Ans. inbound</th>
+              <th style="color:var(--green)">Conn. outbound</th>
+              <th style="color:#be185d">Internal</th>
+              <th style="color:#be185d">Public</th>
+              <th style="color:#be185d">Solved</th>
+              <th style="color:var(--blue-mid)">Util %</th>
+            </tr>
+          </thead>
+          <tbody id="agentBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Zendesk ticket table -->
+    <div class="section-wrap">
+      <div class="section-label">Recent unsolved tickets</div>
+      <button class="info-btn" data-tip="Unsolved tickets from Zendesk updated in the last 24h." data-update="Live — refreshes hourly">i</button>
+    </div>
     <div class="card" style="overflow-x:auto;margin-bottom:24px">
       <table><thead><tr>
-        <th class="l">Week</th><th class="l">Callback requests</th><th class="l">Called back</th>
-        <th class="l">Not called back</th><th class="l">% called back</th><th class="l">Avg pending (mins)</th>
-      </tr></thead><tbody id="cbBody"></tbody></table>
+        <th class="l">ID</th><th class="l">Subject</th><th class="l">Assignee</th><th class="l">Group</th><th class="l">Priority</th><th class="l">Created</th><th class="l">Updated</th>
+      </tr></thead><tbody id="zdTicketBody"></tbody></table>
     </div>
   </div>
 </div>
 
-<div class="ai-tooltip" id="aiTooltip">
-  <div class="ai-tooltip-label">AI coaching summary</div>
-  <div id="aiTooltipText"></div>
+<!-- Section tooltip -->
+<div class="section-tooltip" id="sectionTooltip">
+  <div class="section-tooltip-title" id="sectionTooltipTitle"></div>
+  <div id="sectionTooltipText"></div>
+  <div style="font-size:10px;color:#6b7a99;margin-top:5px;border-top:1px solid #2d3548;padding-top:5px" id="sectionTooltipUpdate"></div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════
+     CORE SCRIPT
+     ══════════════════════════════════════════════════════════════════ -->
 <script>
-// ============================================================
-// CONFIG
-// ============================================================
-const SITE_ID = 'TEGOperationsSharePoint';
-const FILE_ID = '016CEQCFOKZWTLCHGANRG3I67OBP7BWORY';
-const DRIVE_ID = 'b!eDxumJg2N0KTjySMKpu46bIUk2gwX7pOpP6Skm7rAYgPI0Pr1eS-RK80J7QDBAL4';
-const TENANT  = 'transportexchange';
-const CONTRACTED_SECS = 135000;
-const COMMENT_TIME    = 180;
-const LUNCH_EXPECTED  = 18000;
-const LUNCH_TOLERANCE = 300;
-const BRIDGE_STATUSES = ['out_for_lunch','on_a_break'];
+/* ── State ── */
+let globalData = {};
+let currentHeatTeam = '';
+let currentAgentTeam = 'all';
+let charts = {};
+let refreshTimer = null;
+let countdownTimer = null;
+let nextRefreshAt = null;
+let isDemoMode = false;
 
-const TEAM_COLORS = {
-  'Support + Revered':'#1d4ed8','Support':'#1d4ed8','Revered':'#0e7490','Onboarding':'#15803d','Risk and compliance':'#b45309',
-  'Key Accounts VIP Response Team':'#be185d','Credit Control':'#7c3aed',
-  'Smartbook members':'#374151','2nd line (Tech support team)':'#c2410c',
-};
-const TEAM_SHORT = {
-  'Support + Revered':'Support+Rev','Support':'Support','Revered':'Revered','Onboarding':'Onboarding','Risk and compliance':'Risk',
-  'Key Accounts VIP Response Team':'Key accts','Credit Control':'Credit ctrl',
-  'Smartbook members':'Smartbook','2nd line (Tech support team)':'2nd line',
-};
-
-// ============================================================
-// MSAL AUTH
-// ============================================================
-const msalConfig = {
-  auth: {
-    clientId: '7059e381-7e87-49a8-9268-0a730ad100f7',
-    authority: 'https://login.microsoftonline.com/39c9cfa6-ac96-4804-a105-db8c03e1487d',
-    redirectUri: 'https://ashsmyth21.github.io/teg-ops-dashboard/teg_dashboard.html',
-  },
-  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
-};
-
-const msalInstance = new msal.PublicClientApplication(msalConfig);
-const SCOPES = ['https://graph.microsoft.com/Files.Read.All', 'https://graph.microsoft.com/Sites.Read.All'];
-let _token = null;
-
-async function initAuth() {
-  await msalInstance.initialize();
-  const redirectResult = await msalInstance.handleRedirectPromise();
-  if (redirectResult) {
-    _token = redirectResult.accessToken;
-    return true;
-  }
-  const accounts = msalInstance.getAllAccounts();
-  if (accounts.length === 0) {
-    await msalInstance.loginRedirect({ scopes: SCOPES });
-    return false;
-  }
-  try {
-    const result = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account: accounts[0] });
-    _token = result.accessToken;
-    return true;
-  } catch (e) {
-    await msalInstance.acquireTokenRedirect({ scopes: SCOPES, account: accounts[0] });
-    return false;
-  }
-}
-
-async function getToken() {
-  return _token;
-}
-
-// ============================================================
-// GRAPH API HELPERS
-// ============================================================
-async function getFileEndpoint() {
-  return `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}`;
-}
-
-async function readSheet(sheetName) {
-  try {
-    const token = await getToken();
-    if (!token) return [];
-    const base = await getFileEndpoint();
-    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
-    const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
-    if (!resp.ok) {
-      console.error('Sheet error', sheetName, resp.status, await resp.text());
-      return [];
-    }
-    const data = await resp.json();
-    if (!data.values || data.values.length < 2) return [];
-    const headers = data.values[0];
-    return data.values.slice(1).map(row => {
-      const obj = {};
-      headers.forEach((h, i) => { obj[String(h)] = row[i]; });
-      return obj;
-    });
-  } catch(e) { console.error('readSheet error', sheetName, e); return []; }
-}
-
-async function readSheetRaw(sheetName) {
-  try {
-    const token = await getToken();
-    if (!token) return [];
-    const base = await getFileEndpoint();
-    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
-    const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
-    if (!resp.ok) { console.error('Sheet error (raw)', sheetName, resp.status); return []; }
-    const data = await resp.json();
-    return data.values || [];
-  } catch(e) { console.error('readSheetRaw error', sheetName, e); return []; }
-}
-
-// ============================================================
-// DATA PROCESSING
-// ============================================================
+/* ── Helpers ── */
 function fmtHrs(sec) {
   if (!sec || sec <= 0) return '—';
   const hrs = sec / 3600;
   if (hrs >= 1) return Math.round(hrs) + 'h';
   const mins = Math.round(hrs * 60);
-  if (mins <= 0) return '—';
-  return mins + 'm';
+  return mins > 0 ? mins + 'm' : '—';
 }
-
-function parseTimeSec(t) {
-  if (!t) return 0;
-  // HH:MM:SS string format
-  const s = String(t);
-  const parts = s.split(':');
-  if (parts.length === 3) return (+parts[0])*3600 + (+parts[1])*60 + (+parts[2]);
-  // Decimal hours (e.g. 5.775 = 5h 46m)
-  const num = parseFloat(t);
-  if (!isNaN(num) && num > 0) return Math.round(num * 3600);
-  return 0;
-}
-
+function fh(s) { return (!s || s === '—' || s === '0h') ? '<span class="muted-txt">—</span>' : s; }
+function dv(v) { return (v != null && v > 0) ? v : '<span class="muted-txt">—</span>'; }
 function scoreStyle(u) {
   if (u >= 85) return { bg:'#f0fdf4', col:'#15803d' };
   if (u >= 61) return { bg:'#fffbeb', col:'#b45309' };
   return { bg:'#fef2f2', col:'#dc2626' };
 }
-
 function lunchFlag(secs, partWeek) {
   if (partWeek) return '';
   if (secs <= 0) return '<span class="flag" style="background:#fffbeb;color:#b45309">↓ not logged</span>';
-  if (secs > LUNCH_EXPECTED + LUNCH_TOLERANCE) return '<span class="flag" style="background:#fef2f2;color:#dc2626">↑ high</span>';
-  if (secs < LUNCH_EXPECTED - LUNCH_TOLERANCE) return '<span class="flag" style="background:#fffbeb;color:#b45309">↓ low</span>';
+  if (secs > CONFIG.LUNCH_EXPECTED + CONFIG.LUNCH_TOLERANCE) return '<span class="flag" style="background:#fef2f2;color:#dc2626">↑ high</span>';
+  if (secs < CONFIG.LUNCH_EXPECTED - CONFIG.LUNCH_TOLERANCE) return '<span class="flag" style="background:#fffbeb;color:#b45309">↓ low</span>';
   return '<span class="flag" style="background:#f0fdf4;color:#15803d">✓</span>';
 }
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date(typeof ts === 'number' ? ts * 1000 : ts).toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+}
+function fmtDateTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short' }) + ' ' +
+         d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+}
 
-function dv(v) { return (v != null && v > 0) ? v : '<span class="muted">—</span>'; }
-function fh(s) { return (!s || s === '—' || s === '0h') ? '<span class="muted">—</span>' : s; }
+/* ── Worker fetch helpers ────────────────────────────────────────────────
+   All API calls go to the Cloudflare Worker. No credentials in the browser.
+   The Worker holds Aircall and Zendesk secrets; the dashboard only sends
+   the passcode in a custom header.
+   ─────────────────────────────────────────────────────────────────────── */
+function workerHeaders() {
+  return {
+    'X-App-Passcode': CONFIG.APP_PASSCODE,
+    'Content-Type':   'application/json',
+  };
+}
 
-// ============================================================
-// MAIN LOAD
-// ============================================================
-let globalData = {};
-let currentHeatTeam = 'support';
-let currentAgentTeam = 'all';
-let charts = {};
+async function workerGet(path) {
+  if (!CONFIG.WORKER_URL) throw new Error('NO_WORKER');
+  const resp = await fetch(CONFIG.WORKER_URL + path, { headers: workerHeaders() });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`Worker ${resp.status} on ${path}: ${body.slice(0, 200)}`);
+  }
+  return resp.json();
+}
 
+/* Aircall — Worker paginates /v1/calls server-side and returns one response */
+async function fetchAircall(path) {
+  return workerGet('/api/aircall' + path);
+}
+
+/* Zendesk — Worker handles auth; we just request the path */
+async function fetchZendesk(path) {
+  return workerGet('/api/zendesk' + path);
+}
+
+async function fetchAllZDPages(path, dataKey) {
+  // Worker handles Zendesk pagination for /tickets.json.
+  // For other endpoints we paginate here via next_page returned by the worker.
+  let url = '/api/zendesk' + path;
+  let all = [];
+  while (url) {
+    const data = await workerGet(url);
+    all = all.concat(data[dataKey] || []);
+    // Worker strips next_page for ticket lists; for other endpoints honour it
+    const next = data.next_page || null;
+    if (!next) break;
+    // next_page is a full URL — extract just the path+query for the worker
+    try { url = '/api/zendesk' + new URL(next).pathname + new URL(next).search; }
+    catch { break; }
+    if (all.length > 2000) break;
+  }
+  return all;
+}
+
+/* ── Mock / demo data ── */
+function generateDemoData() {
+  const teams = [
+    { key:'support',     label:'Support',     color:'#1d4ed8' },
+    { key:'revered',     label:'Revered',     color:'#0e7490' },
+    { key:'onboarding',  label:'Onboarding',  color:'#15803d' },
+    { key:'risk',        label:'Risk',        color:'#b45309' },
+    { key:'credit',      label:'Credit ctrl', color:'#7c3aed' },
+    { key:'keyaccounts', label:'Key accts',   color:'#be185d' },
+    { key:'smartbook',   label:'Smartbook',   color:'#374151' },
+  ];
+
+  const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const dayData  = { inbound:{}, outbound:{}, missed:{} };
+  dayOrder.forEach((d,i) => {
+    const base = i < 5 ? 80 + Math.round(Math.random()*60) : 10 + Math.round(Math.random()*20);
+    dayData.inbound[d]  = base;
+    dayData.outbound[d] = Math.round(base * 0.6);
+    dayData.missed[d]   = Math.round(base * 0.12);
+  });
+  const totals = {
+    inbound:  dayOrder.reduce((s,d) => s+dayData.inbound[d],  0),
+    outbound: dayOrder.reduce((s,d) => s+dayData.outbound[d], 0),
+    missed:   dayOrder.reduce((s,d) => s+dayData.missed[d],   0),
+  };
+  totals.total = totals.inbound + totals.outbound;
+
+  const teamSummary = teams.map(t => {
+    const inbound  = 200 + Math.round(Math.random()*300);
+    const answered = Math.round(inbound * (0.6 + Math.random()*0.35));
+    const outbound = 100 + Math.round(Math.random()*150);
+    const connOut  = Math.round(outbound * (0.4 + Math.random()*0.4));
+    return { ...t, inbound, answered, answerPct: answered/inbound*100, outbound, connOut, connPct: connOut/outbound*100, missed: inbound - answered };
+  });
+
+  const agentNames = ['Alice Johnson','Bob Smith','Carol White','Dave Brown','Emma Davis','Frank Miller','Grace Wilson','Henry Moore','Isabel Taylor','James Anderson','Karen Thomas','Liam Jackson'];
+  const agents = agentNames.map((name, i) => {
+    const team = teams[i % teams.length].label;
+    const in_call = 3600 + Math.round(Math.random()*14400);
+    const inbound_calls = 20 + Math.round(Math.random()*80);
+    const outbound_calls = 10 + Math.round(Math.random()*40);
+    const after_call_work = Math.round(in_call * 0.3);
+    const allowed_acw = (inbound_calls + outbound_calls) * 180;
+    const excess_acw = Math.max(0, after_call_work - allowed_acw);
+    const zd = { internal: 5 + Math.round(Math.random()*30), public: 3 + Math.round(Math.random()*20), solved: Math.round(Math.random()*15) };
+    const comments = zd.internal + zd.public;
+    const zdProd = comments * CONFIG.COMMENT_TIME;
+    const callProd = in_call + Math.min(after_call_work, allowed_acw);
+    const callUtil = Math.min(Math.round(callProd / CONFIG.CONTRACTED_SECS * 100), 100);
+    const zdUtil   = Math.min(Math.round(zdProd   / CONFIG.CONTRACTED_SECS * 100), 100);
+    return { name, team, in_call, after_call_work, available: 28800 - in_call - after_call_work, allowed_acw, excess_acw, inbound_calls, outbound_calls, out_for_lunch: 18300 + Math.round(Math.random()*1200-600), callUtil, zdUtil, partWeek: Math.random() < 0.1, zd };
+  });
+
+  const heatmaps = {};
+  teams.forEach(t => {
+    const hm = {};
+    ['Mon','Tue','Wed','Thu','Fri'].forEach(d => {
+      hm[d] = [];
+      for (let h=8; h<=18; h++) hm[d].push({ hr:h, v: Math.round(Math.random()*25) });
+    });
+    heatmaps[t.key] = hm;
+  });
+
+  const zdGroups = teams.map(t => ({ name: t.label, open: 5 + Math.round(Math.random()*40), urgent: Math.round(Math.random()*8), color: t.color }));
+
+  const zdTickets = Array.from({length:12}, (_,i) => ({
+    id: 1000 + i,
+    subject: ['Login issue for freight partner','Invoice not generated','Onboarding call needed','API timeout errors','Password reset loop','Missing tracking data','Rate card query','Document upload failing','2FA not working','Dashboard access request','Billing discrepancy','Account merge request'][i],
+    assignee: agentNames[i % agentNames.length],
+    group: teams[i % teams.length].label,
+    priority: ['urgent','high','normal','low'][Math.floor(Math.random()*4)],
+    created_at: new Date(Date.now() - Math.random()*7*86400000).toISOString(),
+    updated_at: new Date(Date.now() - Math.random()*3600000).toISOString(),
+  }));
+
+  return { totals, dayOrder, dayData, teamSummary, agents, heatmaps, zdGroups, zdTickets, teams };
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   MAIN DATA LOADER
+   ══════════════════════════════════════════════════════════════════ */
 async function loadDashboard() {
   document.getElementById('loadingScreen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
+  document.getElementById('configWarn').style.display = 'none';
+  document.getElementById('loadingMsg').textContent = 'Connecting to Aircall & Zendesk…';
 
-  try {
-    const [companyRows, agentStatsRows, cvRows,
-           zdRows,
-           aiRows,
-           cbRows, teamRows,
-           supportIn, supportOut, reveredIn, reveredOut,
-           onboardIn, onboardOut, riskIn, riskOut, creditIn, creditOut, keyIn, keyOut, smartIn, smartOut] = await Promise.all([
-      readSheet('Company call data'),
-      readSheet('agent stats'),
-      readSheet('call volumes'),
-      readSheet('zendesk ticket activity'),
-      readSheet('ai summaries'),
-      readSheet('call back data'),
-      readSheet('cfg_agents '),
-      readSheet('Support data inbound'),
-      readSheet('Support outbound'),
-      readSheet('Revered data inbound'),
-      readSheet('Revered data outbound'),
-      readSheet('Onboparding data inbound'),
-      readSheet('Onboparding data outbound'),
-      readSheet('Risk data inbound'),
-      readSheet('Risk data outbound'),
-      readSheet('Credit control inbound'),
-      readSheet('Credit control outbound'),
-      readSheet('Key accounts inbound'),
-      readSheet('Key accounts outbound'),
-      readSheet('Smartbook inbound'),
-      readSheet('Smartbook outbound'),
-    ]);
+  const isConfigured = CONFIG.WORKER_URL && CONFIG.APP_PASSCODE;
 
-    // ---- Company metrics ----
-    const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-    const dayData = { inbound:{}, outbound:{}, missed:{}, total:{} };
-    companyRows.forEach(r => {
-      const day = r['Created Day of Week']; if (!day) return;
-      dayData.inbound[day]  = Number(r['Inbound Calls'])  || 0;
-      dayData.outbound[day] = Number(r['Outbound Calls']) || 0;
-      dayData.missed[day]   = Number(r['Missed Calls'])   || 0;
-      // Calculate total from components — formula column unreliable
-      dayData.total[day]    = (Number(r['Inbound Calls']) || 0) + (Number(r['Outbound Calls']) || 0);
-    });
-    const totals = {
-      total:    dayOrder.reduce((s,d) => s+(dayData.total[d]||0),   0),
-      missed:   dayOrder.reduce((s,d) => s+(dayData.missed[d]||0),  0),
-      inbound:  dayOrder.reduce((s,d) => s+(dayData.inbound[d]||0), 0),
-      outbound: dayOrder.reduce((s,d) => s+(dayData.outbound[d]||0),0),
-    };
+  if (!isConfigured) {
+    isDemoMode = true;
+    document.getElementById('liveBadge').style.display = 'none';
+    document.getElementById('demoBadge').style.display = 'inline-flex';
 
-    // ---- Team summary ----
-    const teamDefs = [
-      { key:'support',     label:'Support',     inR:supportIn,   outR:supportOut  },
-      { key:'revered',     label:'Revered',     inR:reveredIn,   outR:reveredOut  },
-      { key:'onboarding',  label:'Onboarding',  inR:onboardIn,   outR:onboardOut  },
-      { key:'risk',        label:'Risk',        inR:riskIn,      outR:riskOut     },
-      { key:'credit',      label:'Credit ctrl', inR:creditIn,    outR:creditOut   },
-      { key:'keyaccounts', label:'Key accts',   inR:keyIn,       outR:keyOut      },
-      { key:'smartbook',   label:'Smartbook',   inR:smartIn,     outR:smartOut    },
-    ];
-    const teamSummary = teamDefs.map(def => {
-      const inF  = def.inR[0]  || {};
-      const outF = def.outR[0] || {};
-      return {
-        key: def.key, label: def.label,
-        inbound:   Number(inF['Inbound calls'])  || 0,
-        answered:  Number(inF['Answered inbound']) || 0,
-        answerPct: (parseFloat(inF['Percentage of answered inbound calls']) || 0) * 100,
-        outbound:  Number(outF['Outbound calls']) || 0,
-        connOut:   Number(outF['Outbound calls (connected calls > x sec)']) || 0,
-        connPct:   (parseFloat(outF['Percentage of Outbound calls (connected calls > x sec)']) || 0) * 100,
-        missed:    Number(inF['Unanswered inbound calls']) || 0,
-      };
-    });
+    if (!CONFIG.WORKER_URL) {
+      document.getElementById('loadingScreen').style.display = 'none';
+      document.getElementById('configWarn').style.display = 'block';
+      return;
+    }
 
-    // ---- Agent team map from cfg_agents ----
-    const agentTeam = {};
-    teamRows.forEach(r => {
-      const name = String(r['agent_name'] || '').trim();
-      const team = String(r['team'] || '').trim();
-      if (name && team) agentTeam[name] = team;
-    });
+    globalData = generateDemoData();
+    setApiStatus('ac', 'demo');
+    setApiStatus('zd', 'demo');
+  } else {
+    isDemoMode = false;
+    document.getElementById('liveBadge').style.display = 'inline-flex';
+    document.getElementById('demoBadge').style.display = 'none';
 
-    // ---- Call volumes map ----
-    const cvMap = {};
-    cvRows.forEach(r => {
-      const name = String(r['User']||'').trim();
-      if (name) cvMap[name] = r;
-    });
-
-    // ---- Zendesk map ----
-    const zdMap = {};
-    zdRows.forEach(r => {
-      const name = String(r['Agent name']||'').trim();
-      if (!name) return;
-      if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
-      zdMap[name].internal += Number(r['Internal comments']) || 0;
-      zdMap[name].public   += Number(r['Public comments'])   || 0;
-      zdMap[name].solved   += Number(r['Tickets solved'])    || 0;
-    });
-
-    // ---- AI summaries map ----
-    const aiMap = {};
-    aiRows.forEach(r => {
-      const name = String(r['Agent name']||'').trim();
-      if (name) aiMap[name] = String(r['Summary']||'');
-    });
-
-    // ---- Agent stats aggregation ----
-    const agentAgg = {};
-    agentStatsRows.forEach(r => {
-      const name = String(r['Agent Name']||'').trim();
-      if (!name || name === 'null' || name === 'Agent Name') return;
-      if (!agentAgg[name]) agentAgg[name] = {};
-      const agg = agentAgg[name];
-      const addSec = (key, col) => { agg[key] = (agg[key]||0) + parseTimeSec(r[col]); };
-      addSec('available',       'Available');
-      addSec('in_call',         'In call');
-      addSec('after_call_work', 'After Call Work');
-      addSec('on_a_break',      'On break');
-      addSec('out_for_lunch',   'Out for lunch');
-      addSec('in_training',     'In training');
-      addSec('doing_back_office','Back Office');
-      addSec('do_not_disturb',  'Do not disturb');
-    });
-
-    // ---- Build agent list ----
-    const agents = Object.entries(agentAgg).map(([name, s]) => {
-      const cv  = cvMap[name] || null;
-      const zd  = zdMap[name] || null;
-      const ai  = aiMap[name] || null;
-      const inb = cv ? (Number(cv['Answered inbound calls']||cv['Answered inbound']||0)) : 0;
-      const out = cv ? (Number(cv['Connected outbound calls']||cv['Connected outbound']||0)) : 0;
-      const gs  = k => s[k] || 0;
-      const allowedAcw    = (inb + out) * 180;
-      const investigation = (out * 60) + (inb * 30);
-      const excessAcw     = Math.max(0, gs('after_call_work') - allowedAcw);
-      const callProd      = Math.max(0,
-          gs('in_call') + Math.min(gs('after_call_work'), allowedAcw) + investigation + gs('doing_back_office') + gs('in_training') - excessAcw);
-      const comments  = zd ? (zd.internal + zd.public) : 0;
-      const zdProd    = comments * COMMENT_TIME;
-      const callUtil  = Math.min(Math.round(callProd / CONTRACTED_SECS * 100), 100);
-      const zdUtil    = Math.min(Math.round(zdProd   / CONTRACTED_SECS * 100), 100);
-      const activeSecs = gs('available') + gs('in_call') + gs('after_call_work') + gs('doing_back_office') + gs('in_training') + gs('do_not_disturb');
-      const partWeek  = activeSecs < 90000;
-      const team = agentTeam[name] || '—';
-      return { name, team, excess_acw:excessAcw, available:gs('available'), in_call:gs('in_call'),
-               after_call_work:gs('after_call_work'), allowed_acw:allowedAcw, investigation,
-               doing_back_office:gs('doing_back_office'), in_training:gs('in_training'),
-               out_for_lunch:gs('out_for_lunch'), on_a_break:gs('on_a_break'),
-               inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai };
-    }).sort((a,b) => (b.callUtil+b.zdUtil) - (a.callUtil+a.zdUtil));
-
-    const weekNum = agentStatsRows.length > 0 ? (agentStatsRows[0]['Week'] || '—') : '—';
-
-    // Build Support + Revered sub-team summary
-    const extractTeamSummary = (inR, outR) => {
-      const inF  = inR[0]  || {};
-      const outF = outR[0] || {};
-      return {
-        inbound:  Number(inF['Inbound calls'])   || 0,
-        answered: Number(inF['Answered inbound']) || 0,
-        missed:   Number(inF['Unanswered inbound calls']) || 0,
-        outbound: Number(outF['Outbound calls'])  || 0,
-        connOut:  Number(outF['Outbound calls (connected calls > x sec)']) || 0,
-      };
-    };
-    const supportRevSplit = {
-      support: extractTeamSummary(supportIn, supportOut),
-      revered: extractTeamSummary(reveredIn, reveredOut),
-    };
-
-    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit };
-
-    // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
-    // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
-    const heatSheets = {
-      support: supportIn, revered: reveredIn, onboarding: onboardIn, risk: riskIn,
-      keyaccounts: keyIn, smartbook: smartIn
-    };
-    Object.entries(heatSheets).forEach(([key, rows]) => {
-      const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
-      rows.forEach(r => {
-        const hr = Number(r['Hour']); if (!hr) return;
-        hm.Mon.push({hr,v:Number(r['Monday'])||0});
-        hm.Tue.push({hr,v:Number(r['Tuesday'])||0});
-        hm.Wed.push({hr,v:Number(r['Wednesday'])||0});
-        hm.Thu.push({hr,v:Number(r['Thursday'])||0});
-        hm.Fri.push({hr,v:Number(r['Friday'])||0});
-      });
-      globalData.heatmaps[key] = hm;
-    });
-
-    renderDashboard();
-    document.getElementById('loadingScreen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
-
-  } catch(e) {
-    document.getElementById('loadingScreen').innerHTML = `<div class="error-box">Failed to load data: ${e.message}<br><small>Make sure you are signed into SharePoint and the dashboard file has access permissions.</small></div>`;
-    console.error(e);
+    try {
+      globalData = await fetchLiveData();
+    } catch(e) {
+      document.getElementById('loadingScreen').innerHTML =
+        `<div class="error-box">
+          <strong>Failed to load data</strong><br>
+          ${e.message}<br><br>
+          <small>Check your API credentials and proxy URL in the CONFIG block at the top of this file.</small>
+         </div>`;
+      return;
+    }
   }
+
+  renderDashboard();
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+
+  scheduleRefresh();
 }
 
-// ============================================================
-// RENDER
-// ============================================================
+function setApiStatus(id, state) {
+  const el = document.getElementById(id === 'ac' ? 'acStatus' : 'zdStatus');
+  if (!el) return;
+  el.className = 'status-dot ' + (state === 'ok' ? 'ok' : state === 'demo' ? 'loading' : 'err');
+}
+
+async function fetchLiveData() {
+  document.getElementById('loadingMsg').textContent = 'Fetching Aircall data…';
+
+  const now  = Math.floor(Date.now() / 1000);
+  const from = now - CONFIG.LOOKBACK_DAYS * 86400;
+
+  /* ── Aircall: users + teams + calls in parallel ── */
+  let aircallUsers = [], aircallTeams = [], rawCalls = [];
+  let aircallOk = false;
+
+  try {
+    const [usersResp, teamsResp, callsResp] = await Promise.all([
+      fetchAircall('/v1/users?per_page=50'),
+      fetchAircall('/v1/teams?per_page=50'),
+      // Worker paginates calls server-side — one round-trip returns all pages
+      fetchAircall(`/v1/calls?from=${from}&to=${now}`),
+    ]);
+    aircallUsers = usersResp.users  || [];
+    aircallTeams = teamsResp.teams  || [];
+    rawCalls     = callsResp.calls  || [];
+    aircallOk = true;
+    setApiStatus('ac', 'ok');
+  } catch(e) {
+    console.warn('Aircall fetch failed:', e);
+    setApiStatus('ac', 'err');
+  }
+
+  /* ── Process Aircall calls ── */
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const dayData  = { inbound:{}, outbound:{}, missed:{} };
+  dayOrder.forEach(d => { dayData.inbound[d]=0; dayData.outbound[d]=0; dayData.missed[d]=0; });
+
+  const agentCallAgg = {}; // name → { inbound, outbound, in_call_sec }
+  const teamCallAgg  = {}; // team_name → { inbound, answered, outbound, connOut, missed }
+  const heatmapRaw   = {}; // teamId → { Mon: {8: count, ...}, ... }
+
+  // Build user id→name and id→team maps
+  const userById = {};
+  const userTeam = {};
+  aircallUsers.forEach(u => {
+    userById[u.id] = u.name;
+    if (u.teams && u.teams.length) userTeam[u.id] = u.teams[0].name;
+  });
+
+  rawCalls.forEach(call => {
+    const day = dayNames[new Date(call.started_at * 1000).getDay()];
+    const dir = call.direction; // 'inbound' | 'outbound'
+    const missed = call.status === 'missed' || call.status === 'voicemail';
+
+    if (dir === 'inbound') {
+      dayData.inbound[day]  = (dayData.inbound[day] || 0) + 1;
+      if (missed) dayData.missed[day] = (dayData.missed[day] || 0) + 1;
+    } else {
+      dayData.outbound[day] = (dayData.outbound[day] || 0) + 1;
+    }
+
+    // Agent aggregation
+    const userId = call.user ? call.user.id : null;
+    const agentName = userId ? userById[userId] : null;
+    if (agentName) {
+      if (!agentCallAgg[agentName]) agentCallAgg[agentName] = { inbound:0, outbound:0, in_call_sec:0, conn_out:0 };
+      const agg = agentCallAgg[agentName];
+      if (dir === 'inbound' && !missed) agg.inbound++;
+      if (dir === 'outbound') {
+        agg.outbound++;
+        if ((call.duration || 0) > 10) agg.conn_out++;
+      }
+      agg.in_call_sec += call.duration || 0;
+    }
+
+    // Team aggregation (use the number's team if available)
+    const teamName = call.number ? (call.number.team_name || '') : '';
+    if (teamName) {
+      if (!teamCallAgg[teamName]) teamCallAgg[teamName] = { inbound:0, answered:0, outbound:0, connOut:0, missed:0 };
+      const tagg = teamCallAgg[teamName];
+      if (dir === 'inbound') {
+        tagg.inbound++;
+        if (!missed) tagg.answered++;
+        else tagg.missed++;
+      } else {
+        tagg.outbound++;
+        if ((call.duration || 0) > 10) tagg.connOut++;
+      }
+    }
+
+    // Heatmap
+    const callHour = new Date(call.started_at * 1000).getHours();
+    const shortDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(call.started_at*1000).getDay()];
+    const hmTeamKey = teamName || 'all';
+    if (!heatmapRaw[hmTeamKey]) heatmapRaw[hmTeamKey] = {};
+    if (!heatmapRaw[hmTeamKey][shortDay]) heatmapRaw[hmTeamKey][shortDay] = {};
+    heatmapRaw[hmTeamKey][shortDay][callHour] = (heatmapRaw[hmTeamKey][shortDay][callHour] || 0) + 1;
+  });
+
+  const totals = {
+    inbound:  dayOrder.reduce((s,d) => s+dayData.inbound[d],  0),
+    outbound: dayOrder.reduce((s,d) => s+dayData.outbound[d], 0),
+    missed:   dayOrder.reduce((s,d) => s+dayData.missed[d],   0),
+  };
+  totals.total = totals.inbound + totals.outbound;
+
+  // Build teamSummary from Aircall teams list + aggregated call data
+  const teamSummary = aircallTeams.map(t => {
+    const agg = teamCallAgg[t.name] || { inbound:0, answered:0, outbound:0, connOut:0, missed:0 };
+    const answerPct = agg.inbound > 0 ? agg.answered / agg.inbound * 100 : 0;
+    const connPct   = agg.outbound > 0 ? agg.connOut / agg.outbound * 100 : 0;
+    const key = t.name.toLowerCase().replace(/\s+/g,'').replace(/[^a-z]/g,'');
+    return { key, label: t.name, ...agg, answerPct, connPct, color: TEAM_COLORS[t.name] || '#888' };
+  }).filter(t => t.inbound + t.outbound > 0);
+
+  // Build heatmaps
+  const heatmaps = {};
+  Object.entries(heatmapRaw).forEach(([teamKey, dayMap]) => {
+    const hm = {};
+    ['Mon','Tue','Wed','Thu','Fri'].forEach(d => {
+      hm[d] = [];
+      for (let h=8; h<=18; h++) hm[d].push({ hr:h, v: (dayMap[d] || {})[h] || 0 });
+    });
+    heatmaps[teamKey] = hm;
+  });
+
+  /* ── Aircall: availability stats (plan-dependent endpoint) ── */
+  let availStats = {};
+  if (aircallOk) {
+    try {
+      const statsResp = await fetchAircall(`/v1/stats/user/availability?from=${from}&to=${now}`);
+      if (statsResp && statsResp.data) {
+        statsResp.data.forEach(s => {
+          availStats[s.user_name] = {
+            available_sec: s.available_duration         || 0,
+            in_call_sec:   s.in_call_duration           || 0,
+            acw_sec:       s.after_call_work_duration   || 0,
+          };
+        });
+      }
+    } catch(e) { /* stats endpoint not included on all Aircall plans — silent skip */ }
+  }
+
+  // Build agents list from user data
+  const agents = aircallUsers.map(u => {
+    const ca   = agentCallAgg[u.name] || {};
+    const av   = availStats[u.name]   || {};
+    const in_call  = ca.in_call_sec || av.in_call_sec || 0;
+    const avail    = av.available_sec || 0;
+    const acw      = av.acw_sec || 0;
+    const inbound  = ca.inbound  || 0;
+    const outbound = ca.outbound || 0;
+    const allowed_acw = (inbound + outbound) * 180;
+    const excess_acw  = Math.max(0, acw - allowed_acw);
+    const callProd    = in_call + Math.min(acw, allowed_acw);
+    const callUtil    = Math.min(Math.round(callProd / CONFIG.CONTRACTED_SECS * 100), 100);
+    const team = userTeam[u.id] || '—';
+    return { name: u.name, team, in_call, available: avail, after_call_work: acw, allowed_acw, excess_acw,
+             inbound_calls: inbound, outbound_calls: outbound, conn_out: ca.conn_out || 0, callUtil, zdUtil: 0, partWeek: false, zd: null };
+  }).filter(a => a.inbound_calls + a.outbound_calls + a.in_call > 0)
+    .sort((a,b) => b.callUtil - a.callUtil);
+
+  /* ── Zendesk ── */
+  document.getElementById('loadingMsg').textContent = 'Fetching Zendesk data…';
+
+  let zdGroups = [], zdTickets = [];
+  try {
+    const [groupsData, ticketsResp, zdUsersData] = await Promise.all([
+      fetchZendesk('/api/v2/groups.json').catch(() => ({ groups: [] })),
+      // Worker intercepts /api/v2/tickets.json, runs Search, paginates, and slims
+      fetchZendesk('/api/v2/tickets.json?status=open&status=pending&sort_by=updated_at&sort_order=desc&per_page=100'),
+      fetchAllZDPages('/api/v2/users.json?role=agent&per_page=100', 'users'),
+    ]);
+
+    setApiStatus('zd', 'ok');
+
+    const ticketsData = ticketsResp.tickets || [];
+    const zdUserById  = {};
+    (zdUsersData || []).forEach(u => { zdUserById[u.id] = u.name; });
+
+    const zdGroupById = {};
+    (groupsData.groups || []).forEach(g => { zdGroupById[g.id] = g.name; });
+
+    // Group open ticket counts
+    const groupCounts = {};
+    (ticketsData || []).forEach(t => {
+      const gname = zdGroupById[t.group_id] || 'Unassigned';
+      if (!groupCounts[gname]) groupCounts[gname] = { open:0, urgent:0 };
+      groupCounts[gname].open++;
+      if (t.priority === 'urgent' || t.priority === 'high') groupCounts[gname].urgent++;
+    });
+
+    zdGroups = Object.entries(groupCounts).map(([name, c]) => ({ name, ...c, color: '#1d4ed8' }));
+
+    // Agent ZD map — count from tickets solved in window
+    const agentZD = {};
+    try {
+      const solved = await fetchAllZDPages(
+        `/search.json?query=type:ticket+status:solved+updated>${new Date(from*1000).toISOString().split('T')[0]}&per_page=100`, 'results'
+      );
+      solved.forEach(t => {
+        const name = zdUserById[t.assignee_id] || '';
+        if (!name) return;
+        if (!agentZD[name]) agentZD[name] = { internal:0, public:0, solved:0 };
+        agentZD[name].solved++;
+      });
+    } catch(e) { /* ignore */ }
+
+    // Enrich agents with zd data
+    agents.forEach(a => {
+      if (agentZD[a.name]) {
+        a.zd = agentZD[a.name];
+        const comments = a.zd.internal + a.zd.public;
+        const zdProd = comments * CONFIG.COMMENT_TIME;
+        a.zdUtil = Math.min(Math.round(zdProd / CONFIG.CONTRACTED_SECS * 100), 100);
+      }
+    });
+
+    // Recent tickets for display
+    zdTickets = (ticketsData || []).slice(0, 20).map(t => ({
+      id: t.id,
+      subject: t.subject,
+      assignee: zdUserById[t.assignee_id] || '—',
+      group: zdGroupById[t.group_id] || '—',
+      priority: t.priority || 'normal',
+      created_at: t.created_at,
+      updated_at: t.updated_at,
+    }));
+
+  } catch(e) {
+    console.warn('Zendesk fetch failed:', e);
+    setApiStatus('zd', 'err');
+  }
+
+  // Build teams for heatmap tabs (use team names from teamSummary)
+  const teams = teamSummary.map(t => ({ key: t.key, label: t.label }));
+
+  // Date range label
+  const fromDate = new Date(from * 1000).toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+  const toDate   = new Date(now  * 1000).toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+  document.getElementById('dataRange').textContent = `Data range: ${fromDate} – ${toDate}`;
+
+  return { totals, dayOrder, dayData, teamSummary, agents, heatmaps, zdGroups, zdTickets, teams };
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   RENDER
+   ══════════════════════════════════════════════════════════════════ */
 function renderDashboard() {
-  const { totals, dayOrder, dayData, teamSummary, agents, cbRows, weekNum } = globalData;
+  const { totals, dayOrder, dayData, teamSummary, agents, zdGroups, zdTickets, teams } = globalData;
 
-  document.getElementById('weekBadge').textContent = 'Week ' + weekNum;
-
-  // Metrics
+  /* Metrics */
   const mp = v => totals.total > 0 ? ((v/totals.total)*100).toFixed(1)+'% of total' : '—';
-  document.getElementById('mTotal').textContent    = totals.total.toLocaleString();
-  document.getElementById('mMissed').textContent   = totals.missed.toLocaleString();
-  document.getElementById('mMissedPct').textContent= totals.total > 0 ? ((totals.missed/totals.total)*100).toFixed(1)+'% of total' : '—';
-  document.getElementById('mInbound').textContent  = totals.inbound.toLocaleString();
+  document.getElementById('mTotal').textContent    = (totals.total  || 0).toLocaleString();
+  document.getElementById('mMissed').textContent   = (totals.missed || 0).toLocaleString();
+  document.getElementById('mMissedPct').textContent= totals.total > 0 ? ((totals.missed/totals.total)*100).toFixed(1)+'% miss rate' : '—';
+  document.getElementById('mInbound').textContent  = (totals.inbound  || 0).toLocaleString();
   document.getElementById('mInboundPct').textContent = mp(totals.inbound);
-  document.getElementById('mOutbound').textContent = totals.outbound.toLocaleString();
+  document.getElementById('mOutbound').textContent = (totals.outbound || 0).toLocaleString();
   document.getElementById('mOutboundPct').textContent = mp(totals.outbound);
 
-  // Team cards
-  const TC = {support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',keyaccounts:'#be185d',smartbook:'#374151'};
+  /* Team cards */
   document.getElementById('teamGrid').innerHTML = teamSummary.map(t => {
-    const tc = TC[t.key]||'#888';
-    const ac = t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
+    const tc = t.color || TEAM_COLORS[t.label] || '#888';
+    const ac = t.answerPct >= 70 ? '#15803d' : t.answerPct >= 50 ? '#b45309' : '#dc2626';
     return `<div class="team-card">
       <div class="tc-name" style="color:${tc}">${t.label}</div>
       <div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div>
       <div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div>
-      <div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div>
+      <div class="tc-bar"><div class="tc-fill" style="width:${Math.min(100,Math.round(t.answerPct))}%;background:${ac}"></div></div>
       <div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div>
-      <div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div>
-      <div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div>
+      <div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut || 0} (${(t.connPct||0).toFixed(1)}%)</span></div>
+      <div class="tc-bar"><div class="tc-fill" style="width:${Math.min(100,Math.round(t.connPct||0))}%;background:#1d4ed8"></div></div>
       <div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div>
     </div>`;
   }).join('');
 
-  // Charts
-  if (charts.day) charts.day.destroy();
-  if (charts.answer) charts.answer.destroy();
+  /* Charts */
+  if (charts.day)      charts.day.destroy();
+  if (charts.answer)   charts.answer.destroy();
   if (charts.outbound) charts.outbound.destroy();
 
   charts.day = new Chart(document.getElementById('dayChart'), {
     type:'bar', data:{
       labels: dayOrder.map(d=>d.slice(0,3)),
       datasets:[
-        {label:'Inbound', data:dayOrder.map(d=>dayData.inbound[d]||0), backgroundColor:'#3b82f6'},
-        {label:'Outbound',data:dayOrder.map(d=>dayData.outbound[d]||0),backgroundColor:'#15803d'},
-        {label:'Missed',  data:dayOrder.map(d=>dayData.missed[d]||0),  backgroundColor:'#dc2626'},
+        {label:'Inbound', data:dayOrder.map(d=>dayData.inbound[d]||0),  backgroundColor:'#3b82f6'},
+        {label:'Outbound',data:dayOrder.map(d=>dayData.outbound[d]||0), backgroundColor:'#15803d'},
+        {label:'Missed',  data:dayOrder.map(d=>dayData.missed[d]||0),   backgroundColor:'#dc2626'},
       ]
     },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(0,0,0,.05)'}}}}
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11}}}},scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(0,0,0,.05)'}}}}
   });
 
   charts.answer = new Chart(document.getElementById('answerChart'), {
     type:'bar', data:{
       labels: teamSummary.map(t=>t.label),
-      datasets:[{label:'Answer %', data:teamSummary.map(t=>t.answerPct),
+      datasets:[{label:'Answer %',data:teamSummary.map(t=>+(t.answerPct||0).toFixed(1)),
         backgroundColor:teamSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626')}]
     },
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'}},y:{grid:{display:false}}}}
@@ -682,79 +871,107 @@ function renderDashboard() {
   charts.outbound = new Chart(document.getElementById('outboundChart'), {
     type:'bar', data:{
       labels: teamSummary.map(t=>t.label),
-      datasets:[{label:'Connected %',data:teamSummary.map(t=>t.connPct),backgroundColor:'#1d4ed8'}]
+      datasets:[{label:'Connected %',data:teamSummary.map(t=>+(t.connPct||0).toFixed(1)),backgroundColor:'#1d4ed8'}]
     },
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'}},y:{grid:{display:false}}}}
   });
 
-  // Heatmap
-  renderHeatmap(currentHeatTeam);
+  /* Heatmap tabs */
+  const teamList = (globalData.teams && globalData.teams.length)
+    ? globalData.teams
+    : teamSummary.map(t => ({ key: t.key, label: t.label }));
 
-  // Agent table
-  renderAgents(currentAgentTeam);
-
-  // Callbacks
-  // Aggregate callback rows by week
-  const cbByWeek = {};
-  cbRows.forEach(r => {
-    const week = r['week 22'];
-    if (!week) return;
-    if (!cbByWeek[week]) cbByWeek[week] = { total:0, calledBack:0, pendingSum:0, pendingCount:0 };
-    cbByWeek[week].total      += Number(r['Call Type'])       || 0;
-    cbByWeek[week].calledBack += Number(r['Started at'])      || 0;
-    const p = Number(r['Callback failure']);
-    if (p > 0) { cbByWeek[week].pendingSum += p; cbByWeek[week].pendingCount++; }
+  const heatTabsEl = document.getElementById('heatTabs');
+  heatTabsEl.innerHTML = '';
+  teamList.forEach((t,i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (i===0?' active':'');
+    btn.dataset.team = t.key;
+    btn.textContent = t.label;
+    heatTabsEl.appendChild(btn);
   });
-  const cbHtml = Object.keys(cbByWeek).length > 0
-    ? Object.entries(cbByWeek).sort((a,b) => a[0]-b[0]).map(([week, d]) => {
-        const notCalledBack = d.total - d.calledBack;
-        const pct = d.total > 0 ? (d.calledBack / d.total * 100) : 0;
-        const avgPending = d.pendingCount > 0 ? (d.pendingSum / d.pendingCount) : 0;
-        const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
-        return `<tr>
-          <td class="l">Week ${week}</td>
-          <td class="l">${d.total||'—'}</td>
-          <td class="l" style="color:var(--green);font-weight:500">${d.calledBack||'—'}</td>
-          <td class="l" style="color:var(--red);font-weight:500">${notCalledBack > 0 ? notCalledBack : '—'}</td>
-          <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
-          <td class="l">${avgPending ? avgPending.toFixed(1)+' mins' : '—'}</td>
-        </tr>`;
-      }).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
-  document.getElementById('cbBody').innerHTML = cbHtml;
-
-  // Tab listeners
-  document.getElementById('heatTabs').addEventListener('click', e => {
+  heatTabsEl.addEventListener('click', e => {
     const btn = e.target.closest('.tab'); if (!btn) return;
     document.querySelectorAll('#heatTabs .tab').forEach(t=>t.classList.remove('active'));
     btn.classList.add('active');
     currentHeatTeam = btn.dataset.team;
     renderHeatmap(currentHeatTeam);
   });
+  if (teamList.length) {
+    currentHeatTeam = teamList[0].key;
+    renderHeatmap(currentHeatTeam);
+  }
 
-  document.getElementById('agentTabs').addEventListener('click', e => {
+  /* Zendesk metrics */
+  const zdMetEl = document.getElementById('zdMetrics');
+  zdMetEl.innerHTML = (zdGroups || []).length === 0
+    ? '<div style="color:var(--subtle);font-size:12px;padding:8px 0">No Zendesk data</div>'
+    : zdGroups.map(g => `
+        <div class="metric-card">
+          <div class="lbl">${g.name}</div>
+          <div class="val">${g.open}</div>
+          <div class="sub" style="color:${g.urgent>0?'#b45309':'var(--subtle)'}">
+            ${g.urgent > 0 ? g.urgent + ' urgent/high' : 'no urgent'}
+          </div>
+        </div>`).join('');
+
+  /* Agent tabs */
+  const agentTabsEl = document.getElementById('agentTabs');
+  agentTabsEl.innerHTML = '<button class="tab active" data-team="all">All teams</button>';
+  const distinctTeams = [...new Set(agents.map(a=>a.team).filter(t=>t&&t!=='—'))];
+  distinctTeams.forEach(tm => {
+    const btn = document.createElement('button');
+    btn.className = 'tab';
+    btn.dataset.team = tm;
+    btn.textContent = TEAM_SHORT[tm] || tm;
+    agentTabsEl.appendChild(btn);
+  });
+  agentTabsEl.addEventListener('click', e => {
     const btn = e.target.closest('.tab'); if (!btn) return;
     document.querySelectorAll('#agentTabs .tab').forEach(t=>t.classList.remove('active'));
     btn.classList.add('active');
     currentAgentTeam = btn.dataset.team;
     renderAgents(currentAgentTeam);
   });
+  renderAgents(currentAgentTeam);
 
-  initTooltip();
+  /* Zendesk ticket table */
+  const zdTicketBodyEl = document.getElementById('zdTicketBody');
+  if (!zdTickets || zdTickets.length === 0) {
+    zdTicketBodyEl.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--subtle);padding:1rem">No Zendesk ticket data</td></tr>';
+  } else {
+    const pCol = { urgent:'var(--red)', high:'var(--amber)', normal:'var(--muted)', low:'var(--subtle)' };
+    zdTicketBodyEl.innerHTML = zdTickets.map(t => `<tr>
+      <td class="l" style="color:var(--blue-mid);font-weight:500">#${t.id}</td>
+      <td class="l" style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${t.subject}</td>
+      <td class="l">${t.assignee}</td>
+      <td class="l">${t.group}</td>
+      <td class="l" style="color:${pCol[t.priority]||'var(--muted)'};font-weight:500">${t.priority}</td>
+      <td class="l">${fmtDate(t.created_at)}</td>
+      <td class="l">${fmtDateTime(t.updated_at)}</td>
+    </tr>`).join('');
+  }
 }
 
-function renderHeatmap(team) {
-  const td = globalData.heatmaps[team]; if (!td) return;
+/* ── Heatmap ── */
+function renderHeatmap(teamKey) {
+  const heatmap = globalData.heatmaps || {};
+  const td = heatmap[teamKey] || heatmap[Object.keys(heatmap)[0]];
+  if (!td) { document.getElementById('heatmap').innerHTML = '<div style="color:var(--subtle);padding:1rem;font-size:12px">No heatmap data for this team</div>'; return; }
+
   const wkdays = ['Mon','Tue','Wed','Thu','Fri'];
-  const hours  = [8,9,10,11,12,13,14,15,16,17];
-  const hourLabels = ['8am','9am','10am','11am','12pm','1pm','2pm','3pm','4pm','5pm'];
+  const hours  = Array.from({length:11}, (_,i) => 8+i);
+  const hourLabels = ['8am','9am','10am','11am','12pm','1pm','2pm','3pm','4pm','5pm','6pm'];
   let max = 0;
   wkdays.forEach(d => (td[d]||[]).forEach(p => { if(p.v>max) max=p.v; }));
+
   const grid = document.getElementById('heatmap');
   grid.innerHTML = '';
   grid.style.gridTemplateColumns = '44px repeat(5,1fr)';
+
   const h0 = document.createElement('div'); h0.className='heat-head'; grid.appendChild(h0);
   wkdays.forEach(d => { const h=document.createElement('div');h.className='heat-head';h.textContent=d;grid.appendChild(h); });
+
   hours.forEach((hr,i) => {
     const lbl=document.createElement('div');lbl.className='heat-cell';lbl.textContent=hourLabels[i];lbl.style.color='var(--muted)';grid.appendChild(lbl);
     wkdays.forEach(day => {
@@ -771,133 +988,110 @@ function renderHeatmap(team) {
   });
 }
 
+/* ── Agent table ── */
 function renderAgents(team) {
   const { agents } = globalData;
-
-  // ── Show/hide Team column based on filter ──
   const table = document.getElementById('agentTable');
-  if (team === 'all') {
-    table.classList.remove('hide-team');
-  } else {
-    table.classList.add('hide-team');
-  }
+  if (team === 'all') table.classList.remove('hide-team');
+  else table.classList.add('hide-team');
 
-  const maxCallSec = agents.reduce((m,a) => Math.max(m,a.in_call||0), 0);
+  const maxCallSec = agents.reduce((m,a) => Math.max(m, a.in_call||0), 0);
   const list = team === 'all' ? agents : agents.filter(a => a.team === team);
   const seen = {};
   const rows = list.filter(a => { if(seen[a.name]) return false; seen[a.name]=true; return true; });
 
-  let summaryRowHtml = '';
-
-    document.getElementById('agentBody').innerHTML = rows.map(a => {
-    const tc = TEAM_COLORS[a.team]||'#888';
-    const sh = TEAM_SHORT[a.team]||a.team;
-    const bw = maxCallSec>0?Math.round(a.in_call/maxCallSec*40):0;
+  document.getElementById('agentBody').innerHTML = rows.map(a => {
+    const tc = TEAM_COLORS[a.team] || '#888';
+    const sh = TEAM_SHORT[a.team] || a.team;
+    const bw = maxCallSec > 0 ? Math.round((a.in_call||0)/maxCallSec*40) : 0;
     const cs = scoreStyle(a.callUtil);
-    const zs = scoreStyle(a.zdUtil);
     const pw = a.partWeek ? '<span class="wp">part wk</span>' : '';
-    const exCell = a.excess_acw>0
-      ? `<td style="color:var(--red)">${fmtHrs(a.excess_acw)}<span class="excess-pill">−${fmtHrs(a.excess_acw)}</span></td>`
-      : '<td class="muted">—</td>';
-    const ls = a.out_for_lunch||0;
-    const lDisp = ls>0?(Math.round(ls/360)/10)+'h':'—';
-    const lCell = `<td style="color:var(--amber)">${lDisp} ${lunchFlag(ls,a.partWeek)}</td>`;
-    const cv = a.cv; const zd = a.zd;
-    const cvC = cv
-      ? `<td>${dv(cv['Answered inbound calls']||cv['Answered inbound'])}</td><td>${dv(cv['Connected outbound calls']||cv['Connected outbound'])}</td><td>${dv(cv['Outbound calls']||cv['Outbound'])}</td>`
-      : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
-    const zdC = zd
-      ? `<td>${dv(zd.internal)}</td><td>${dv(zd.public)}</td><td style="font-weight:600;color:${zd.solved>0?'var(--keyaccts)':'var(--subtle)'}">${zd.solved||'—'}</td>`
-      : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
-    const hasAi = a.ai ? 'has-summary' : '';
-    return `<tr class="${hasAi}" data-agent="${a.name.replace(/"/g,'&quot;')}">
+    const zdC = a.zd
+      ? `<td>${dv(a.zd.internal)}</td><td>${dv(a.zd.public)}</td><td style="font-weight:600;color:${a.zd.solved>0?'#be185d':'var(--subtle)'}">${a.zd.solved||'—'}</td>`
+      : '<td class="muted-txt">—</td><td class="muted-txt">—</td><td class="muted-txt">—</td>';
+    return `<tr>
       <td class="l col-agent" style="font-weight:500">${a.name}${pw}</td>
       <td class="l col-team"><span class="team-pill" style="background:${tc}18;color:${tc}">${sh}</span></td>
       <td>${fh(fmtHrs(a.available))}</td>
       <td><span class="bar-mini" style="width:${bw}px"></span>${fh(fmtHrs(a.in_call))}</td>
       <td>${fh(fmtHrs(a.after_call_work))}</td>
-      <td style="color:var(--subtle);font-size:10px">${fh(fmtHrs(a.allowed_acw))}</td>
-      ${exCell}
-      <td>${fh(fmtHrs(a.investigation))}</td>
-      <td>${fh(fmtHrs(a.doing_back_office))}</td>
-      <td>${fh(fmtHrs(a.in_training))}</td>
-      ${lCell}
-      ${cvC}${zdC}
+      <td>${dv(a.inbound_calls)}</td>
+      <td>${dv(a.outbound_calls)}</td>
+      ${zdC}
       <td><span class="score-pill" style="background:${cs.bg};color:${cs.col}">${a.callUtil}%</span></td>
-      <td><span class="score-pill" style="background:${zs.bg};color:${zs.col}">${a.zdUtil}%</span></td>
     </tr>`;
   }).join('');
 }
 
-// ============================================================
-// AI TOOLTIP
-// ============================================================
-function initTooltip() {
-  const tooltip = document.getElementById('aiTooltip');
-  const tooltipText = document.getElementById('aiTooltipText');
-  const aiMap = {};
-  globalData.agents.forEach(a => { if(a.ai) aiMap[a.name] = a.ai; });
+/* ══════════════════════════════════════════════════════════════════
+   REFRESH TIMER
+   ══════════════════════════════════════════════════════════════════ */
+function scheduleRefresh() {
+  clearInterval(refreshTimer);
+  clearInterval(countdownTimer);
+  nextRefreshAt = Date.now() + CONFIG.REFRESH_INTERVAL_MS;
 
-  document.getElementById('agentBody').addEventListener('mouseover', e => {
-    const cell = e.target.closest('td.l');
-    if (!cell) { tooltip.classList.remove('visible'); return; }
-    const row = cell.closest('tr.has-summary');
-    if (!row) { tooltip.classList.remove('visible'); return; }
-    const cells = row.querySelectorAll('td');
-    if (cells[0] !== cell) { tooltip.classList.remove('visible'); return; }
-    const name = row.dataset.agent;
-    if (!aiMap[name]) return;
-    tooltipText.textContent = aiMap[name];
-    tooltip.classList.add('visible');
-  });
+  refreshTimer = setInterval(() => { triggerRefresh(); }, CONFIG.REFRESH_INTERVAL_MS);
 
-  document.getElementById('agentBody').addEventListener('mousemove', e => {
-    if (tooltip.classList.contains('visible')) {
-      tooltip.style.left = (e.clientX + 16) + 'px';
-      tooltip.style.top  = Math.min(e.clientY - 10, window.innerHeight - 140) + 'px';
-    }
-  });
-
-  document.getElementById('agentBody').addEventListener('mouseout', e => {
-    tooltip.classList.remove('visible');
-  });
+  countdownTimer = setInterval(() => {
+    const remaining = Math.max(0, nextRefreshAt - Date.now());
+    const m = Math.floor(remaining / 60000);
+    const s = Math.floor((remaining % 60000) / 1000);
+    document.getElementById('nextRefresh').textContent =
+      remaining > 0 ? `· next refresh ${m}m ${String(s).padStart(2,'0')}s` : '';
+  }, 1000);
 }
 
-// ============================================================
-// INIT
-// ============================================================
-initAuth().then(ready => { if (ready) loadDashboard(); });
-</script>
-<div class="section-tooltip" id="sectionTooltip">
-  <div class="section-tooltip-title" id="sectionTooltipTitle"></div>
-  <div id="sectionTooltipText"></div>
-  <div class="section-tooltip-update" id="sectionTooltipUpdate"></div>
-</div>
-<script>
+function triggerRefresh() {
+  clearInterval(refreshTimer);
+  clearInterval(countdownTimer);
+  loadDashboard();
+}
+
+/* ── Section tooltip ── */
 (function(){
   const tip = document.getElementById('sectionTooltip');
-  const tipTitle = document.getElementById('sectionTooltipTitle');
-  const tipText = document.getElementById('sectionTooltipText');
-  const tipUpdate = document.getElementById('sectionTooltipUpdate');
   document.addEventListener('mouseover', e => {
     const btn = e.target.closest('.info-btn');
     if (!btn) { tip.classList.remove('visible'); return; }
-    const label = btn.closest('.section-wrap').querySelector('.section-label').textContent;
-    tipTitle.textContent = label;
-    tipText.textContent = btn.dataset.tip;
-    tipUpdate.textContent = '↻ ' + btn.dataset.update;
+    const sw = btn.closest('.section-wrap');
+    if (sw) document.getElementById('sectionTooltipTitle').textContent = sw.querySelector('.section-label').textContent;
+    document.getElementById('sectionTooltipText').textContent   = btn.dataset.tip;
+    document.getElementById('sectionTooltipUpdate').textContent = '↻ ' + btn.dataset.update;
     tip.classList.add('visible');
   });
   document.addEventListener('mousemove', e => {
     if (tip.classList.contains('visible')) {
-      tip.style.left = Math.min(e.clientX + 12, window.innerWidth - 300) + 'px';
-      tip.style.top  = Math.min(e.clientY - 10, window.innerHeight - 120) + 'px';
+      tip.style.left = Math.min(e.clientX+12, window.innerWidth-300)+'px';
+      tip.style.top  = Math.min(e.clientY-10, window.innerHeight-120)+'px';
     }
   });
-  document.addEventListener('mouseout', e => {
-    if (!e.target.closest('.info-btn')) tip.classList.remove('visible');
-  });
+  document.addEventListener('mouseout', e => { if(!e.target.closest('.info-btn')) tip.classList.remove('visible'); });
 })();
+
+/* ── Boot ── */
+loadDashboard();
 </script>
+
+<!--
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SETUP — deploy teg_ops_worker.js to Cloudflare Workers                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+1. Go to https://dash.cloudflare.com → Workers & Pages → Create Worker
+2. Paste the contents of teg_ops_worker.js into the editor and deploy
+3. Go to the Worker's Settings → Variables → add these 7 secrets:
+     AIRCALL_API_ID        from Aircall Dashboard → Integrations → API keys
+     AIRCALL_API_TOKEN     (same place)
+     ZENDESK_SUBDOMAIN     e.g. transportexchange
+     ZENDESK_EMAIL         the agent email your token belongs to
+     ZENDESK_API_TOKEN     from Zendesk Admin Centre → Apps → Zendesk API
+     APP_PASSCODE          any strong string — paste same value into CONFIG.APP_PASSCODE
+     ALLOWED_ORIGIN        your GitHub Pages URL e.g. https://ashsmyth21.github.io
+4. Copy the *.workers.dev URL into CONFIG.WORKER_URL above
+5. Push this HTML to GitHub Pages — done
+
+No credentials ever appear in this file or in browser network requests.
+-->
 </body>
 </html>
