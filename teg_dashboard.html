@@ -584,13 +584,14 @@ async function fetchLiveData() {
       fetchAircall('/v1/teams?per_page=50'),
       // Worker paginates calls server-side — one round-trip returns all pages
       fetchAircall(`/v1/calls?from=${from}&to=${now}`),
-      // V2 availabilities — current live status + substatus per user
-      fetchAircall('/v2/users/availabilities').catch(() => ({ data: [] })),
+      // V1 availabilities — current live status + substatus per user
+      fetchAircall('/v1/users/availabilities').catch(() => ({ users: [] })),
     ]);
     aircallUsers   = usersResp.users  || [];
     aircallTeams   = teamsResp.teams  || [];
     rawCalls       = callsResp.calls  || [];
-    availabilities = availResp.data   || availResp.users || [];
+    // availabilities lives under .users in the V1 response
+    availabilities = availResp.users  || availResp.data || [];
     aircallOk = true;
     setApiStatus('ac', 'ok');
   } catch(e) {
@@ -599,13 +600,13 @@ async function fetchLiveData() {
   }
 
   // Build availability map: user_id → { status, substatus }
-  // Substatus examples: out_for_lunch, in_training, doing_back_office,
-  //                     on_a_break, do_not_disturb, after_call_work
+  // V1 /users/availabilities returns: { id, availability, substatus, ... }
+  // Substatus examples: out_for_lunch, in_training, doing_back_office, on_a_break
   const availMap = {};
   availabilities.forEach(a => {
     availMap[a.id] = {
-      status:    a.availability    || a.status    || 'offline',
-      substatus: a.substatus_since ? a.substatus  : (a.substatus || null),
+      status:    a.availability || a.status || 'offline',
+      substatus: a.custom_availability || a.substatus || null,
     };
   });
 
