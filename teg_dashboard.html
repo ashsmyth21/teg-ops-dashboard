@@ -620,7 +620,19 @@ async function loadDashboard() {
       revered: extractTeamSummary(reveredIn, reveredOut),
     };
 
-    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit };
+    // Store agent team map and ai map for use in renderAgents
+    const agentTeamMap = {};
+    teamRows.forEach(r => {
+      const name = String(r['agent_name']||'').trim();
+      const t = String(r['team']||'').trim();
+      if (name && t) agentTeamMap[name] = t;
+    });
+    const aiMap = {};
+    aiRows.forEach(r => {
+      const name = String(r['Agent name']||'').trim();
+      if (name) aiMap[name] = String(r['Summary']||'');
+    });
+    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap };
 
     // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
     // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
@@ -875,8 +887,95 @@ const DASHBOARD_TEAMS = new Set([
   'Credit Control', '2nd line (Tech support team)'
 ]);
 
+function buildAgentsForWeek(week) {
+  const { agentStatsRows, cvRows, zdRows } = globalData;
+
+  // Determine selected week
+  const allWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+  const latestWeek = allWeeks[allWeeks.length - 1];
+  const selectedWeek = (week === 'latest' || !week) ? latestWeek : Number(week);
+
+  // Agent stats for selected week
+  const agentAgg = {};
+  agentStatsRows.forEach(r => {
+    if (Number(r['Week']) !== selectedWeek) return;
+    const name = String(r['Agent Name']||'').trim();
+    if (!name || name === 'null' || name === 'Agent Name') return;
+    if (!agentAgg[name]) agentAgg[name] = {};
+    const agg = agentAgg[name];
+    const addSec = (key, col) => { agg[key] = (agg[key]||0) + parseTimeSec(r[col]); };
+    addSec('available', 'Available');
+    addSec('in_call', 'In call');
+    addSec('after_call_work', 'After Call Work');
+    addSec('on_a_break', 'On break');
+    addSec('out_for_lunch', 'Out for lunch');
+    addSec('in_training', 'In training');
+    addSec('doing_back_office', 'Back Office');
+    addSec('do_not_disturb', 'Do not disturb');
+  });
+
+  // Call volumes for selected week
+  const cvMap = {};
+  cvRows.filter(r => Number(r['Week']) === selectedWeek).forEach(r => {
+    const name = String(r['User']||'').trim();
+    if (name) cvMap[name] = r;
+  });
+
+  // Zendesk for selected week
+  const zdMap = {};
+  zdRows.filter(r => Number(r['Week']) === selectedWeek).forEach(r => {
+    const name = String(r['Agent name']||'').trim();
+    if (!name) return;
+    if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
+    zdMap[name].internal += Number(r['Internal comments']) || 0;
+    zdMap[name].public   += Number(r['Public comments'])   || 0;
+    zdMap[name].solved   += Number(r['Tickets solved'])    || 0;
+  });
+
+  // Agent team map
+  const agentTeamMap = {};
+  (globalData.teamRows || []).forEach(r => {
+    const name = String(r['agent_name']||'').trim();
+    const t = String(r['team']||'').trim();
+    if (name && t) agentTeamMap[name] = t;
+  });
+
+  // Build agent list
+  return Object.entries(agentAgg).map(([name, s]) => {
+    const cv = cvMap[name] || null;
+    const zd = zdMap[name] || null;
+    const ai = globalData.aiMap ? (globalData.aiMap[name] || null) : null;
+    const inb = cv ? (Number(cv['Answered inbound calls']||cv['Answered inbound']||0)) : 0;
+    const out = cv ? (Number(cv['Connected outbound calls']||cv['Connected outbound']||0)) : 0;
+    const gs = k => s[k] || 0;
+    const allowedAcw = (inb + out) * 180;
+    const investigation = (out * 60) + (inb * 30);
+    const excessAcw = Math.max(0, gs('after_call_work') - allowedAcw);
+    const callProd = Math.max(0, gs('in_call') + Math.min(gs('after_call_work'), allowedAcw) + investigation + gs('doing_back_office') + gs('in_training') - excessAcw);
+    const comments = zd ? (zd.internal + zd.public) : 0;
+    const zdProd = comments * COMMENT_TIME;
+    const callUtil = Math.min(Math.round(callProd / CONTRACTED_SECS * 100), 100);
+    const zdUtil = Math.min(Math.round(zdProd / CONTRACTED_SECS * 100), 100);
+    const activeSecs = gs('available') + gs('in_call') + gs('after_call_work') + gs('doing_back_office') + gs('in_training') + gs('do_not_disturb');
+    const partWeek = activeSecs < 90000;
+    const team = agentTeamMap[name] || (globalData.agentTeamMap ? (globalData.agentTeamMap[name] || '—') : '—');
+    return { name, team, excess_acw:excessAcw, available:gs('available'), in_call:gs('in_call'),
+             after_call_work:gs('after_call_work'), allowed_acw:allowedAcw, investigation,
+             doing_back_office:gs('doing_back_office'), in_training:gs('in_training'),
+             out_for_lunch:gs('out_for_lunch'), on_a_break:gs('on_a_break'),
+             inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai };
+  }).sort((a,b) => (b.callUtil+b.zdUtil) - (a.callUtil+a.zdUtil));
+}
+
 function renderAgents(team) {
-  const { agents } = globalData;
+  // Rebuild agents for selected week
+  const agents = buildAgentsForWeek(currentWeek);
+
+  // Update week badge
+  const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+  const latestWeek = allWeeks[allWeeks.length - 1];
+  const displayWeek = (currentWeek === 'latest' || !currentWeek) ? latestWeek : currentWeek;
+  document.getElementById('weekBadge').textContent = 'Week ' + displayWeek;
 
   // ── Show/hide Team column based on filter ──
   const table = document.getElementById('agentTable');
