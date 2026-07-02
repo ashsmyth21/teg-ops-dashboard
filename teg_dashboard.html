@@ -929,14 +929,18 @@ function renderHeatmap(team) {
       cell.style.background = bg;
       cell.style.color = fg;
       if (hasAnswered && pt.va !== null && pt.va !== undefined) {
-        // Answer rate colour: <=50% red, <=90% amber, >90% green
         const rate = pt.v > 0 ? pt.va / pt.v : 1;
+        // Soft pastel colours for answered rate
         const ansBg = pt.v === 0 ? 'transparent'
-          : rate <= 0.5 ? 'rgba(220,38,38,0.75)'
-          : rate <= 0.9 ? 'rgba(180,83,9,0.75)'
-          : 'rgba(21,128,61,0.75)';
-        const ansFg = pt.v === 0 ? 'var(--muted)' : '#fff';
-        cell.innerHTML = `<div class="heat-cell-left">${pt.v>0?pt.v:''}</div><div class="heat-cell-right" style="background:${ansBg};color:${ansFg}">${pt.va>0?pt.va:''}</div>`;
+          : rate <= 0.5 ? '#fca5a5'   // soft red
+          : rate <= 0.9 ? '#fed7aa'   // soft amber
+          : '#bbf7d0';                // soft green
+        const ansFg = pt.v === 0 ? 'var(--subtle)'
+          : rate <= 0.5 ? '#991b1b'
+          : rate <= 0.9 ? '#92400e'
+          : '#166534';
+        const ansVal = pt.v === 0 ? '' : String(pt.va);
+        cell.innerHTML = `<div class="heat-cell-left">${pt.v>0?pt.v:''}</div><div class="heat-cell-right" style="background:${ansBg};color:${ansFg}">${ansVal}</div>`;
       } else {
         cell.innerHTML = `<div class="heat-cell-single">${pt.v>0?pt.v:''}</div>`;
       }
