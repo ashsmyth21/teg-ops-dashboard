@@ -636,59 +636,13 @@ async function loadDashboard() {
       support: supportIn, onboarding: onboardIn, risk: riskIn,
     };
     // Read raw values for heatmaps to get both total and answered columns
-    const heatRaw = {
+    const heatRawData = {
       support: await readSheetRaw('Support data inbound'),
       onboarding: await readSheetRaw('Onboparding data inbound'),
       risk: await readSheetRaw('Risk data inbound'),
     };
-    Object.entries(heatRaw).forEach(([key, rawRows]) => {
-      const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
-      if (!rawRows || rawRows.length < 2) { globalData.heatmaps[key] = hm; return; }
-
-      // Find the header row
-      const hdrs = rawRows[0].map(h => String(h).trim());
-      const iHour = hdrs.indexOf('Hour');
-      const iMon  = hdrs.indexOf('Monday');
-      const iTue  = hdrs.indexOf('Tuesday');
-      const iWed  = hdrs.indexOf('Wednesday');
-      const iThu  = hdrs.indexOf('Thursday');
-      const iFri  = hdrs.indexOf('Friday');
-      // Answered columns are 7 cols after total (T-Z = cols 19-25 if total starts at col 11)
-      const iAnsBase = iMon + 7; // answered Monday starts 7 cols after total Monday
-
-      // Find the most recent week's heatmap block
-      // Each week has 1 summary row + 10 heatmap rows
-      // Find last block by scanning from bottom for Hour values
-      let lastHourRow = -1;
-      for (let r = rawRows.length - 1; r >= 1; r--) {
-        const v = rawRows[r][iHour];
-        if (v && Number(v) >= 8 && Number(v) <= 17) { lastHourRow = r; break; }
-      }
-      if (lastHourRow < 0) { globalData.heatmaps[key] = hm; return; }
-      // Walk back to find start of this block
-      let blockStart = lastHourRow;
-      for (let r = lastHourRow; r >= 1; r--) {
-        const v = rawRows[r][iHour];
-        if (v && Number(v) >= 8 && Number(v) <= 17) blockStart = r;
-        else if (r < lastHourRow) break;
-      }
-
-      for (let r = blockStart; r <= lastHourRow + 9 && r < rawRows.length; r++) {
-        const hr = Number(rawRows[r][iHour]);
-        if (!hr || hr < 8 || hr > 17) continue;
-        const mkPt = (iT, iA) => ({
-          hr,
-          v:  Number(rawRows[r][iT]) || 0,
-          va: (iA >= 0 && rawRows[r][iA] !== undefined) ? (Number(rawRows[r][iA]) || 0) : null
-        });
-        hm.Mon.push(mkPt(iMon, iAnsBase));
-        hm.Tue.push(mkPt(iTue, iAnsBase + 1));
-        hm.Wed.push(mkPt(iWed, iAnsBase + 2));
-        hm.Thu.push(mkPt(iThu, iAnsBase + 3));
-        hm.Fri.push(mkPt(iFri, iAnsBase + 4));
-      }
-      globalData.heatmaps[key] = hm;
-    });
+    globalData.heatRawData = heatRawData;
+    buildHeatmapsForWeek(currentWeek);
 
     // Build week filter tabs from available weeks in agent stats
     const availableWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
@@ -722,6 +676,8 @@ function renderDashboard() {
     document.querySelectorAll('#weekTabs .tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
     currentWeek = btn.dataset.week;
+    buildHeatmapsForWeek(currentWeek);
+    renderHeatmap(currentHeatTeam);
     renderAgents(currentAgentTeam);
   });
 
@@ -889,6 +845,66 @@ function renderDashboard() {
   });
 
   initTooltip();
+}
+
+function buildHeatmapsForWeek(week) {
+  const heatRawData = globalData.heatRawData;
+  if (!heatRawData) return;
+
+  // Determine selected week number
+  const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+  const latestWeek = Number(allWeeks[allWeeks.length - 1]);
+  const selectedWeek = (week === 'latest' || !week) ? latestWeek : Number(week);
+
+  globalData.heatmaps = {};
+
+  Object.entries(heatRawData).forEach(([key, rawRows]) => {
+    const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
+    if (!rawRows || rawRows.length < 2) { globalData.heatmaps[key] = hm; return; }
+
+    const hdrs = rawRows[0].map(h => String(h).trim());
+    const iHour = hdrs.indexOf('Hour');
+    const iMon  = hdrs.indexOf('Monday');
+    const iTue  = hdrs.indexOf('Tuesday');
+    const iWed  = hdrs.indexOf('Wednesday');
+    const iThu  = hdrs.indexOf('Thursday');
+    const iFri  = hdrs.indexOf('Friday');
+    const iAnsBase = iMon + 7;
+
+    // Find the block for the selected week
+    // Each block: row N = summary (col A = week number), rows N+1..N+10 = heatmap
+    // Find summary row where col 0 = selectedWeek
+    let blockStart = -1;
+    for (let r = 1; r < rawRows.length; r++) {
+      const wkVal = Number(rawRows[r][0]);
+      if (wkVal === selectedWeek) { blockStart = r + 1; break; }
+    }
+
+    // Fallback — use last block if week not found
+    if (blockStart < 0) {
+      for (let r = rawRows.length - 1; r >= 1; r--) {
+        const v = rawRows[r][iHour];
+        if (v && Number(v) >= 8 && Number(v) <= 17) { blockStart = r; break; }
+      }
+    }
+    if (blockStart < 0) { globalData.heatmaps[key] = hm; return; }
+
+    for (let r = blockStart; r < blockStart + 10 && r < rawRows.length; r++) {
+      const hr = Number(rawRows[r][iHour]);
+      if (!hr || hr < 8 || hr > 17) continue;
+      const mkPt = (iT, iA) => ({
+        hr,
+        v:  Number(rawRows[r][iT]) || 0,
+        va: (iA >= 0 && rawRows[r][iA] !== undefined) ? (Number(rawRows[r][iA]) || 0) : null
+      });
+      hm.Mon.push(mkPt(iMon, iAnsBase));
+      hm.Tue.push(mkPt(iTue, iAnsBase + 1));
+      hm.Wed.push(mkPt(iWed, iAnsBase + 2));
+      hm.Thu.push(mkPt(iThu, iAnsBase + 3));
+      hm.Fri.push(mkPt(iFri, iAnsBase + 4));
+    }
+    globalData.heatmaps[key] = hm;
+  });
 }
 
 function renderHeatmap(team) {
