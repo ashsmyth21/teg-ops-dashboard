@@ -48,7 +48,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .tab{padding:4px 10px;font-size:11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--muted);font-weight:500}
 .tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
 .heat-grid{display:grid;gap:2px}
-.heat-cell{height:24px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px}
+.heat-cell{height:28px;border-radius:3px;display:flex;align-items:stretch;overflow:hidden;font-size:10px}
+.heat-cell-left{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px;border-right:1px solid rgba(255,255,255,0.2)}
+.heat-cell-right{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px;opacity:0.75}
+.heat-cell-single{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px}
 .heat-head{height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);font-weight:500}
 table{width:100%;border-collapse:collapse}
 th{font-size:10px;font-weight:500;color:var(--muted);text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface)}
@@ -186,8 +189,6 @@ thead th.col-team {
       <button class="tab active" data-team="support">Support + Revered</button>
       <button class="tab" data-team="onboarding">Onboarding</button>
       <button class="tab" data-team="risk">Risk</button>
-      <button class="tab" data-team="keyaccounts">Key accounts</button>
-      <button class="tab" data-team="smartbook">Smartbook</button>
     </div>
     <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
 
@@ -632,19 +633,60 @@ async function loadDashboard() {
     // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
     // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
     const heatSheets = {
-      support: supportIn, revered: reveredIn, onboarding: onboardIn, risk: riskIn,
-      keyaccounts: keyIn, smartbook: smartIn
+      support: supportIn, onboarding: onboardIn, risk: riskIn,
     };
-    Object.entries(heatSheets).forEach(([key, rows]) => {
+    // Read raw values for heatmaps to get both total and answered columns
+    const heatRaw = {
+      support: await readSheetRaw('Support data inbound'),
+      onboarding: await readSheetRaw('Onboparding data inbound'),
+      risk: await readSheetRaw('Risk data inbound'),
+    };
+    Object.entries(heatRaw).forEach(([key, rawRows]) => {
       const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
-      rows.forEach(r => {
-        const hr = Number(r['Hour']); if (!hr) return;
-        hm.Mon.push({hr,v:Number(r['Monday'])||0});
-        hm.Tue.push({hr,v:Number(r['Tuesday'])||0});
-        hm.Wed.push({hr,v:Number(r['Wednesday'])||0});
-        hm.Thu.push({hr,v:Number(r['Thursday'])||0});
-        hm.Fri.push({hr,v:Number(r['Friday'])||0});
-      });
+      if (!rawRows || rawRows.length < 2) { globalData.heatmaps[key] = hm; return; }
+
+      // Find the header row
+      const hdrs = rawRows[0].map(h => String(h).trim());
+      const iHour = hdrs.indexOf('Hour');
+      const iMon  = hdrs.indexOf('Monday');
+      const iTue  = hdrs.indexOf('Tuesday');
+      const iWed  = hdrs.indexOf('Wednesday');
+      const iThu  = hdrs.indexOf('Thursday');
+      const iFri  = hdrs.indexOf('Friday');
+      // Answered columns are 7 cols after total (T-Z = cols 19-25 if total starts at col 11)
+      const iAnsBase = iMon + 7; // answered Monday starts 7 cols after total Monday
+
+      // Find the most recent week's heatmap block
+      // Each week has 1 summary row + 10 heatmap rows
+      // Find last block by scanning from bottom for Hour values
+      let lastHourRow = -1;
+      for (let r = rawRows.length - 1; r >= 1; r--) {
+        const v = rawRows[r][iHour];
+        if (v && Number(v) >= 8 && Number(v) <= 17) { lastHourRow = r; break; }
+      }
+      if (lastHourRow < 0) { globalData.heatmaps[key] = hm; return; }
+      // Walk back to find start of this block
+      let blockStart = lastHourRow;
+      for (let r = lastHourRow; r >= 1; r--) {
+        const v = rawRows[r][iHour];
+        if (v && Number(v) >= 8 && Number(v) <= 17) blockStart = r;
+        else if (r < lastHourRow) break;
+      }
+
+      for (let r = blockStart; r <= lastHourRow + 9 && r < rawRows.length; r++) {
+        const hr = Number(rawRows[r][iHour]);
+        if (!hr || hr < 8 || hr > 17) continue;
+        const mkPt = (iT, iA) => ({
+          hr,
+          v:  Number(rawRows[r][iT]) || 0,
+          va: (iA >= 0 && rawRows[r][iA] !== undefined) ? (Number(rawRows[r][iA]) || 0) : null
+        });
+        hm.Mon.push(mkPt(iMon, iAnsBase));
+        hm.Tue.push(mkPt(iTue, iAnsBase + 1));
+        hm.Wed.push(mkPt(iWed, iAnsBase + 2));
+        hm.Thu.push(mkPt(iThu, iAnsBase + 3));
+        hm.Fri.push(mkPt(iFri, iAnsBase + 4));
+      }
       globalData.heatmaps[key] = hm;
     });
 
@@ -856,22 +898,41 @@ function renderHeatmap(team) {
   const hourLabels = ['8am','9am','10am','11am','12pm','1pm','2pm','3pm','4pm','5pm'];
   let max = 0;
   wkdays.forEach(d => (td[d]||[]).forEach(p => { if(p.v>max) max=p.v; }));
+  // Check if we have answered data
+  const hasAnswered = wkdays.some(d => (td[d]||[]).some(p => p.va !== null && p.va !== undefined));
   const grid = document.getElementById('heatmap');
   grid.innerHTML = '';
   grid.style.gridTemplateColumns = '44px repeat(5,1fr)';
+  // Header row
   const h0 = document.createElement('div'); h0.className='heat-head'; grid.appendChild(h0);
-  wkdays.forEach(d => { const h=document.createElement('div');h.className='heat-head';h.textContent=d;grid.appendChild(h); });
+  wkdays.forEach(d => {
+    const h = document.createElement('div'); h.className='heat-head';
+    if (hasAnswered) {
+      h.innerHTML = `<span style="flex:1;text-align:center;font-size:9px">${d}<br><span style="color:var(--blue);font-size:8px">Rcvd|Ans</span></span>`;
+    } else {
+      h.textContent = d;
+    }
+    grid.appendChild(h);
+  });
   hours.forEach((hr,i) => {
-    const lbl=document.createElement('div');lbl.className='heat-cell';lbl.textContent=hourLabels[i];lbl.style.color='var(--muted)';grid.appendChild(lbl);
+    const lbl = document.createElement('div'); lbl.className='heat-cell';
+    lbl.innerHTML = `<div class="heat-cell-single" style="color:var(--muted)">${hourLabels[i]}</div>`;
+    grid.appendChild(lbl);
     wkdays.forEach(day => {
       const pts = td[day]||[]; let pt = null;
       for(let k=0;k<pts.length;k++){if(pts[k].hr===hr){pt=pts[k];break;}}
-      if(!pt) pt={v:0};
+      if(!pt) pt={v:0,va:null};
       const pct = max>0?pt.v/max:0;
-      const cell=document.createElement('div');cell.className='heat-cell';
-      cell.style.background=`rgba(29,78,216,${0.08+pct*0.85})`;
-      cell.style.color=pct>0.5?'#fff':'var(--muted)';
-      cell.textContent=pt.v>0?pt.v:'';
+      const bg = `rgba(29,78,216,${0.08+pct*0.85})`;
+      const fg = pct>0.5?'#fff':'var(--muted)';
+      const cell = document.createElement('div'); cell.className='heat-cell';
+      cell.style.background = bg;
+      cell.style.color = fg;
+      if (hasAnswered && pt.va !== null && pt.va !== undefined) {
+        cell.innerHTML = `<div class="heat-cell-left">${pt.v>0?pt.v:''}</div><div class="heat-cell-right">${pt.va>0?pt.va:''}</div>`;
+      } else {
+        cell.innerHTML = `<div class="heat-cell-single">${pt.v>0?pt.v:''}</div>`;
+      }
       grid.appendChild(cell);
     });
   });
