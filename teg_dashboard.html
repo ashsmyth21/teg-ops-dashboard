@@ -185,6 +185,12 @@ thead th.col-team {
     </div>
 
     <div class="section-wrap"><div class="section-label">Inbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of inbound call volume by hour (8am–5pm) and day of week. Darker = busier." data-update="Updated every Monday at 6am">i</button></div>
+    <div id="heatWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
+      <div class="tabs" id="heatWeekTabs" style="margin-bottom:0">
+        <button class="tab active" data-week="latest">Latest</button>
+      </div>
+    </div>
     <div class="tabs" id="heatTabs">
       <button class="tab active" data-team="support">Support + Revered</button>
       <button class="tab" data-team="onboarding">Onboarding</button>
@@ -431,6 +437,7 @@ function fh(s) { return (!s || s === '—' || s === '0h') ? '<span class="muted"
 // ============================================================
 let globalData = {};
 let currentHeatTeam = 'support';
+let currentHeatWeek = 'latest';
 let currentAgentTeam = 'all';
 let currentWeek = 'latest';
 let charts = {};
@@ -642,7 +649,7 @@ async function loadDashboard() {
       risk: await readSheetRaw('Risk data inbound'),
     };
     globalData.heatRawData = heatRawData;
-    buildHeatmapsForWeek(currentWeek);
+    buildHeatmapsForWeek(currentHeatWeek);
 
     // Build week filter tabs from available weeks in agent stats
     const availableWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
@@ -666,7 +673,7 @@ function renderDashboard() {
 
   document.getElementById('weekBadge').textContent = 'Week ' + weekNum;
 
-  // Build week filter tabs
+  // Build agent week filter tabs
   const weekTabsEl = document.getElementById('weekTabs');
   const weeks = globalData.availableWeeks || [];
   weekTabsEl.innerHTML = '<button class="tab' + (currentWeek==='latest'?' active':'') + '" data-week="latest">Latest</button>' +
@@ -676,9 +683,20 @@ function renderDashboard() {
     document.querySelectorAll('#weekTabs .tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
     currentWeek = btn.dataset.week;
-    buildHeatmapsForWeek(currentWeek);
-    renderHeatmap(currentHeatTeam);
     renderAgents(currentAgentTeam);
+  });
+
+  // Build heatmap week filter tabs (independent)
+  const heatWeekTabsEl = document.getElementById('heatWeekTabs');
+  heatWeekTabsEl.innerHTML = '<button class="tab' + (currentHeatWeek==='latest'?' active':'') + '" data-week="latest">Latest</button>' +
+    weeks.map(w => `<button class="tab${currentHeatWeek==w?' active':''}" data-week="${w}">Wk ${w}</button>`).join('');
+  heatWeekTabsEl.addEventListener('click', e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    document.querySelectorAll('#heatWeekTabs .tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    currentHeatWeek = btn.dataset.week;
+    buildHeatmapsForWeek(currentHeatWeek);
+    renderHeatmap(currentHeatTeam);
   });
 
   // Metrics
@@ -851,10 +869,10 @@ function buildHeatmapsForWeek(week) {
   const heatRawData = globalData.heatRawData;
   if (!heatRawData) return;
 
-  // Determine selected week number
+  // Determine selected week number from available weeks in agent stats
   const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
   const latestWeek = Number(allWeeks[allWeeks.length - 1]);
-  const selectedWeek = (week === 'latest' || !week) ? latestWeek : Number(week);
+  const selectedWeek = (!week || week === 'latest') ? latestWeek : Number(week);
 
   globalData.heatmaps = {};
 
