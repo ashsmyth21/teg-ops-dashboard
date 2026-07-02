@@ -452,7 +452,8 @@ async function loadDashboard() {
            aiRows,
            cbRows, teamRows,
            supportIn, supportOut, reveredIn, reveredOut,
-           onboardIn, onboardOut, riskIn, riskOut, creditIn, creditOut, keyIn, keyOut, smartIn, smartOut] = await Promise.all([
+           onboardIn, onboardOut, riskIn, riskOut, creditIn, creditOut, keyIn, keyOut, smartIn, smartOut,
+           rawCallsRows] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
       readSheet('call volumes'),
@@ -474,6 +475,7 @@ async function loadDashboard() {
       readSheet('Key accounts outbound'),
       readSheet('Smartbook inbound'),
       readSheet('Smartbook outbound'),
+      readSheetRaw('raw_calls'),
     ]);
 
     // ---- Company metrics ----
@@ -643,12 +645,29 @@ async function loadDashboard() {
       support: supportIn, onboarding: onboardIn, risk: riskIn,
     };
     // Read raw values for heatmaps to get both total and answered columns
-    const heatRawData = {
-      support: await readSheetRaw('Support data inbound'),
-      onboarding: await readSheetRaw('Onboparding data inbound'),
-      risk: await readSheetRaw('Risk data inbound'),
-    };
-    globalData.heatRawData = heatRawData;
+    // Store raw_calls for heatmap building
+    globalData.rawCallsRows = rawCallsRows;
+    // Build cfg_numbers and cfg_agents maps for attribution
+    const cfgNumbersRows = await readSheetRaw('cfg_numbers ');
+    const cfgAgentsRows  = await readSheetRaw('cfg_agents ');
+    const numTeamMap = {};
+    if (cfgNumbersRows && cfgNumbersRows.length > 1) {
+      for (let i = 1; i < cfgNumbersRows.length; i++) {
+        const id = String(cfgNumbersRows[i][0]||'').trim();
+        const tm = String(cfgNumbersRows[i][1]||'').trim();
+        if (id) numTeamMap[id] = tm;
+      }
+    }
+    const agentTeamMapHeat = {};
+    if (cfgAgentsRows && cfgAgentsRows.length > 1) {
+      for (let i = 1; i < cfgAgentsRows.length; i++) {
+        const nm = String(cfgAgentsRows[i][0]||'').trim();
+        const tm = String(cfgAgentsRows[i][1]||'').trim();
+        if (nm) agentTeamMapHeat[nm] = tm;
+      }
+    }
+    globalData.numTeamMap = numTeamMap;
+    globalData.agentTeamMapHeat = agentTeamMapHeat;
     buildHeatmapsForWeek(currentHeatWeek);
 
     // Build week filter tabs from available weeks in agent stats
@@ -865,62 +884,102 @@ function renderDashboard() {
   initTooltip();
 }
 
-function buildHeatmapsForWeek(week) {
-  const heatRawData = globalData.heatRawData;
-  if (!heatRawData) return;
+function resolveHeatTeam(row, hdrs, numTeamMap, agentTeamMapHeat) {
+  const iDir  = hdrs.indexOf('direction');
+  const iTeam = hdrs.indexOf('team_name');
+  const iNum  = hdrs.indexOf('number_id');
+  const iUser = hdrs.indexOf('user_name');
+  const iAns  = hdrs.indexOf('answered_at');
+  const teamName  = String(row[iTeam]||'').trim();
+  const numberId  = String(row[iNum] ||'').trim();
+  const userName  = String(row[iUser]||'').trim();
+  const direction = String(row[iDir] ||'').trim();
+  const answered  = row[iAns] !== '' && row[iAns] != null;
+  const TEAM_LABEL_MAP = {
+    'Support':'Support + Revered','Support Revered':'Support + Revered',
+    'Onboarding':'Onboarding','Onboarding stage 1 calls':'Onboarding',
+    'Risk and compliance':'Risk and compliance',
+    'Support - Credit Control':'Credit Control',
+  };
+  if (userName && agentTeamMapHeat[userName] && (direction==='outbound'||answered)) return agentTeamMapHeat[userName];
+  if (teamName && TEAM_LABEL_MAP[teamName]) return TEAM_LABEL_MAP[teamName];
+  if (numberId && numTeamMap[String(parseInt(numberId))]) return numTeamMap[String(parseInt(numberId))];
+  return '';
+}
 
-  // Determine selected week number from available weeks in agent stats
+function buildHeatmapsForWeek(week) {
+  const rawCallsRows = globalData.rawCallsRows;
+  if (!rawCallsRows || rawCallsRows.length < 2) return;
+
   const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
   const latestWeek = Number(allWeeks[allWeeks.length - 1]);
   const selectedWeek = (!week || week === 'latest') ? latestWeek : Number(week);
 
+  // Convert week number to date range (Mon-Sun UTC)
+  // Find Monday of ISO week selectedWeek
+  const jan4 = new Date(Date.UTC(2026, 0, 4));
+  const jan4Day = (jan4.getUTCDay() + 6) % 7;
+  const week1Mon = new Date(jan4.getTime() - jan4Day * 86400000);
+  const weekMon = new Date(week1Mon.getTime() + (selectedWeek - 1) * 7 * 86400000);
+  const weekStartSec = Math.floor(weekMon.getTime() / 1000);
+  const weekEndSec   = weekStartSec + 7 * 86400;
+
+  const HOURS = [8,9,10,11,12,13,14,15,16,17];
+  const DAYS  = ['Mon','Tue','Wed','Thu','Fri'];
+  const numTeamMap = globalData.numTeamMap || {};
+  const agentTeamMapHeat = globalData.agentTeamMapHeat || {};
+
+  const hdrs = rawCallsRows[0].map(h => String(h).trim());
+  const iStart = hdrs.indexOf('started_at');
+  const iAns   = hdrs.indexOf('answered_at');
+  const iDir   = hdrs.indexOf('direction');
+
+  // Team keys to dashboard labels
+  const HEAT_TEAMS = {
+    'support':    ['Support + Revered'],
+    'onboarding': ['Onboarding'],
+    'risk':       ['Risk and compliance'],
+  };
+
   globalData.heatmaps = {};
 
-  Object.entries(heatRawData).forEach(([key, rawRows]) => {
+  Object.entries(HEAT_TEAMS).forEach(([key, labels]) => {
+    const heat    = HOURS.map(() => new Array(5).fill(0)); // total [hour][day Mon-Fri]
+    const heatAns = HOURS.map(() => new Array(5).fill(0)); // answered
+
+    for (let i = 1; i < rawCallsRows.length; i++) {
+      const row = rawCallsRows[i];
+      const started = Number(row[iStart]);
+      if (!started || started < weekStartSec || started >= weekEndSec) continue;
+      const direction = String(row[iDir]||'').trim();
+      if (direction !== 'inbound') continue;
+
+      const team = resolveHeatTeam(row, hdrs, numTeamMap, agentTeamMapHeat);
+      if (!labels.includes(team)) continue;
+
+      const d = new Date(started * 1000);
+      // BST offset: add 1 hour for London time
+      const localHour = (d.getUTCHours() + 1) % 24;
+      const utcDay = d.getUTCDay(); // 0=Sun
+      // After +1 hour, Sunday 23:xx becomes Monday 00:xx — adjust day
+      let adjustedDay = utcDay;
+      if (d.getUTCHours() === 23) adjustedDay = (utcDay + 1) % 7;
+      const dayIdx = (adjustedDay + 6) % 7; // 0=Mon
+      if (dayIdx > 4) continue; // skip Sat/Sun
+      const hourIdx = HOURS.indexOf(localHour);
+      if (hourIdx < 0) continue;
+
+      heat[hourIdx][dayIdx]++;
+      const ans = row[iAns];
+      if (ans !== '' && ans != null) heatAns[hourIdx][dayIdx]++;
+    }
+
     const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
-    if (!rawRows || rawRows.length < 2) { globalData.heatmaps[key] = hm; return; }
-
-    const hdrs = rawRows[0].map(h => String(h).trim());
-    const iHour = hdrs.indexOf('Hour');
-    const iMon  = hdrs.indexOf('Monday');
-    const iTue  = hdrs.indexOf('Tuesday');
-    const iWed  = hdrs.indexOf('Wednesday');
-    const iThu  = hdrs.indexOf('Thursday');
-    const iFri  = hdrs.indexOf('Friday');
-    const iAnsBase = iMon + 7;
-
-    // Find the block for the selected week
-    // Each block: row N = summary (col A = week number), rows N+1..N+10 = heatmap
-    // Find summary row where col 0 = selectedWeek
-    let blockStart = -1;
-    for (let r = 1; r < rawRows.length; r++) {
-      const wkVal = Number(rawRows[r][0]);
-      if (wkVal === selectedWeek) { blockStart = r + 1; break; }
-    }
-
-    // Fallback — use last block if week not found
-    if (blockStart < 0) {
-      for (let r = rawRows.length - 1; r >= 1; r--) {
-        const v = rawRows[r][iHour];
-        if (v && Number(v) >= 8 && Number(v) <= 17) { blockStart = r; break; }
-      }
-    }
-    if (blockStart < 0) { globalData.heatmaps[key] = hm; return; }
-
-    for (let r = blockStart; r < blockStart + 10 && r < rawRows.length; r++) {
-      const hr = Number(rawRows[r][iHour]);
-      if (!hr || hr < 8 || hr > 17) continue;
-      const mkPt = (iT, iA) => ({
-        hr,
-        v:  Number(rawRows[r][iT]) || 0,
-        va: (iA >= 0 && rawRows[r][iA] !== undefined) ? (Number(rawRows[r][iA]) || 0) : null
+    HOURS.forEach((hr, hi) => {
+      DAYS.forEach((day, di) => {
+        hm[day].push({ hr, v: heat[hi][di], va: heatAns[hi][di] });
       });
-      hm.Mon.push(mkPt(iMon, iAnsBase));
-      hm.Tue.push(mkPt(iTue, iAnsBase + 1));
-      hm.Wed.push(mkPt(iWed, iAnsBase + 2));
-      hm.Thu.push(mkPt(iThu, iAnsBase + 3));
-      hm.Fri.push(mkPt(iFri, iAnsBase + 4));
-    }
+    });
     globalData.heatmaps[key] = hm;
   });
 }
