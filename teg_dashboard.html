@@ -192,9 +192,12 @@ thead th.col-team {
       </div>
     </div>
     <div class="tabs" id="heatTabs">
-      <button class="tab active" data-team="support">Support + Revered</button>
+      <button class="tab active" data-team="support">Support</button>
+      <button class="tab" data-team="revered">Revered</button>
       <button class="tab" data-team="onboarding">Onboarding</button>
       <button class="tab" data-team="risk">Risk</button>
+      <button class="tab" data-team="credit">Credit control</button>
+      <button class="tab" data-team="secondline">2nd line</button>
     </div>
     <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
 
@@ -895,15 +898,10 @@ function resolveHeatTeam(row, hdrs, numTeamMap, agentTeamMapHeat) {
   const userName  = String(row[iUser]||'').trim();
   const direction = String(row[iDir] ||'').trim();
   const answered  = row[iAns] !== '' && row[iAns] != null;
-  const TEAM_LABEL_MAP = {
-    'Support':'Support + Revered','Support Revered':'Support + Revered',
-    'Onboarding':'Onboarding','Onboarding stage 1 calls':'Onboarding',
-    'Risk and compliance':'Risk and compliance',
-    'Support - Credit Control':'Credit Control',
-  };
-  if (userName && agentTeamMapHeat[userName] && (direction==='outbound'||answered)) return agentTeamMapHeat[userName];
-  if (teamName && TEAM_LABEL_MAP[teamName]) return TEAM_LABEL_MAP[teamName];
+  // Return raw Aircall team_name — heatmap filters by these directly
+  if (teamName) return teamName;
   if (numberId && numTeamMap[String(parseInt(numberId))]) return numTeamMap[String(parseInt(numberId))];
+  if (userName && agentTeamMapHeat[userName] && (direction==='outbound'||answered)) return agentTeamMapHeat[userName];
   return '';
 }
 
@@ -934,11 +932,14 @@ function buildHeatmapsForWeek(week) {
   const iAns   = hdrs.indexOf('answered_at');
   const iDir   = hdrs.indexOf('direction');
 
-  // Team keys to dashboard labels
+  // Team keys to Aircall team_name values (before agent attribution)
   const HEAT_TEAMS = {
-    'support':    ['Support + Revered'],
-    'onboarding': ['Onboarding'],
+    'support':    ['Support'],
+    'revered':    ['Support Revered'],
+    'onboarding': ['Onboarding', 'Onboarding stage 1 calls'],
     'risk':       ['Risk and compliance'],
+    'credit':     ['Credit Control', 'Support - Credit Control'],
+    'secondline': ['2nd line (Tech support team)'],
   };
 
   globalData.heatmaps = {};
