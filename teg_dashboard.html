@@ -701,30 +701,29 @@ async function loadDashboard() {
         const connPct = outTotal > 0 ? outConn / outTotal * 100 : 0;
         // Get talk time from outbound sheets
         let outTalkTime = '';
-        const inWeeks = [...new Set(supportOut.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
-        const latestInWeek = Number(inWeeks[inWeeks.length - 1]);
-        const selInWeek = (!week || week === 'latest') ? latestInWeek : Number(week);
         const COL = 'Outbound in-call time (connected calls > x sec)';
+        const WK_COL = 'Week of the year';
         const _sOut = globalData.supportOut || supportOut;
         const _rOut = globalData.reveredOut || reveredOut;
         const _oOut = globalData.onboardOut || onboardOut;
         const _rkOut = globalData.riskOut || riskOut;
         const _cOut = globalData.creditOut || creditOut;
+        // Find latest week row from the sheet itself
+        function getOutRow(rows) {
+          const wks = rows.map(r => Number(r[WK_COL])).filter(w => w > 0).sort((a,b) => a-b);
+          const selWk = (!week || week === 'latest') ? wks[wks.length-1] : Number(week);
+          return rows.find(r => Number(r[WK_COL]) === selWk) || {};
+        }
         if (td.key === 'supportrev') {
-          const sF = _sOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          const rF = _rOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          const sTime = Number(sF[COL] || 0);
-          const rTime = Number(rF[COL] || 0);
-          outTalkTime = String(sTime + rTime || '');
+          const sF = getOutRow(_sOut);
+          const rF = getOutRow(_rOut);
+          outTalkTime = sF[COL] || rF[COL] || '';
         } else if (td.key === 'onboarding') {
-          const f = _oOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          outTalkTime = String(f[COL] || '');
+          outTalkTime = getOutRow(_oOut)[COL] || '';
         } else if (td.key === 'risk') {
-          const f = _rkOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          outTalkTime = String(f[COL] || '');
+          outTalkTime = getOutRow(_rkOut)[COL] || '';
         } else if (td.key === 'credit') {
-          const f = _cOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          outTalkTime = String(f[COL] || '');
+          outTalkTime = getOutRow(_cOut)[COL] || '';
         }
         return { key: td.key, label: td.label, outTotal, outConn, connPct, outTalkTime };
       });
