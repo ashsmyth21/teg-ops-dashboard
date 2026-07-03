@@ -932,14 +932,14 @@ function buildHeatmapsForWeek(week) {
   const iAns   = hdrs.indexOf('answered_at');
   const iDir   = hdrs.indexOf('direction');
 
-  // Team keys to Aircall team_name values (before agent attribution)
+  // Team keys: team_name values + dedicated number_ids
   const HEAT_TEAMS = {
-    'support':    ['Support'],
-    'revered':    ['Support Revered'],
-    'onboarding': ['Onboarding', 'Onboarding stage 1 calls'],
-    'risk':       ['Risk and compliance'],
-    'credit':     ['Credit Control', 'Support - Credit Control'],
-    'secondline': ['2nd line (Tech support team)'],
+    'support':    { names: ['Support', 'Support Revered'],                       nums: new Set(['286844','286845','286847','286848','192211']) },
+    'revered':    { names: ['Support Revered'],                                  nums: new Set([]) },
+    'onboarding': { names: ['Onboarding','Onboarding stage 1 calls'],            nums: new Set(['201178']) },
+    'risk':       { names: ['Risk and compliance'],                              nums: new Set(['1216204']) },
+    'credit':     { names: ['Credit Control','Support - Credit Control'],        nums: new Set([]) },
+    'secondline': { names: ['2nd line (Tech support team)'],                     nums: new Set(['326618']) },
   };
 
   globalData.heatmaps = {};
@@ -955,8 +955,11 @@ function buildHeatmapsForWeek(week) {
       const direction = String(row[iDir]||'').trim();
       if (direction !== 'inbound') continue;
 
-      const team = resolveHeatTeam(row, hdrs, numTeamMap, agentTeamMapHeat);
-      if (!labels.includes(team)) continue;
+        const teamName2 = String(row[hdrs.indexOf('team_name')]||'').trim();
+      const numId2 = String(row[hdrs.indexOf('number_id')]||'').trim();
+      const teamDef2 = HEAT_TEAMS[key];
+      const matches = teamDef2.names.includes(teamName2) || teamDef2.nums.has(numId2);
+      if (!matches) continue;
 
       const d = new Date(started * 1000);
       // BST offset: add 1 hour for London time
