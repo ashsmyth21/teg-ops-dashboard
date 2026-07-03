@@ -674,57 +674,47 @@ async function loadDashboard() {
     });
     // Build outbound summary by agent team (for correct Support+Revered grouping)
     function buildOutboundSummary(week) {
-      const allWeeks = [...new Set(cvRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
-      const latestWeek = Number(allWeeks[allWeeks.length - 1]);
-      const selectedWeek = (!week || week === 'latest') ? latestWeek : Number(week);
+      const COL_TOT  = 'Outbound calls';
+      const COL_CONN = 'Outbound calls (connected calls > x sec)';
+      const COL_TIME = 'Outbound in-call time (connected calls > x sec)';
+      const WK_COL   = 'Week of the year';
+
+      const _sOut  = globalData.supportOut  || supportOut;
+      const _rOut  = globalData.reveredOut  || reveredOut;
+      const _oOut  = globalData.onboardOut  || onboardOut;
+      const _rkOut = globalData.riskOut     || riskOut;
+      const _cOut  = globalData.creditOut   || creditOut;
+
+      function getOutRow(rows) {
+        const wks = rows.map(r => Number(r[WK_COL])).filter(w => w > 0).sort((a,b) => a-b);
+        const selWk = (!week || week === 'latest') ? wks[wks.length-1] : Number(week);
+        return rows.find(r => Number(r[WK_COL]) === selWk) || {};
+      }
+
+      function rowToStats(f) {
+        return {
+          total: Number(f[COL_TOT]  || 0),
+          conn:  Number(f[COL_CONN] || 0),
+          time:  String(f[COL_TIME] || ''),
+        };
+      }
+
       const OUTBOUND_TEAMS = [
-        { key:'supportrev', label:'Support + Revered', match: t => t === 'Support + Revered' },
-        { key:'onboarding', label:'Onboarding',        match: t => t === 'Onboarding' },
-        { key:'risk',       label:'Risk',              match: t => t === 'Risk and compliance' },
-        { key:'credit',     label:'Credit ctrl',       match: t => t === 'Credit Control' },
-        { key:'secondline', label:'2nd line',          match: t => t === '2nd line (Tech support team)' },
+        { key:'supportrev', label:'Support + Revered', rows: [_sOut, _rOut] },
+        { key:'onboarding', label:'Onboarding',        rows: [_oOut] },
+        { key:'risk',       label:'Risk',              rows: [_rkOut] },
+        { key:'credit',     label:'Credit ctrl',       rows: [_cOut] },
       ];
-      const agentData = {};
-      cvRows.filter(r => Number(r['Week']) === selectedWeek).forEach(r => {
-        const name = String(r['User']||'').trim();
-        if (!name) return;
-        agentData[name] = r;
-      });
+
       return OUTBOUND_TEAMS.map(td => {
-        let outTotal = 0, outConn = 0;
-        Object.entries(agentData).forEach(([name, r]) => {
-          const team = agentTeam[name] || '—';
-          if (!td.match(team)) return;
-          outTotal += Number(r['Outbound calls'] || r['Outbound'] || 0);
-          outConn  += Number(r['Connected outbound calls'] || r['Connected outbound'] || 0);
+        let outTotal = 0, outConn = 0, outTalkTime = '';
+        td.rows.forEach(rows => {
+          const s = rowToStats(getOutRow(rows));
+          outTotal += s.total;
+          outConn  += s.conn;
+          if (!outTalkTime && s.time) outTalkTime = s.time;
         });
         const connPct = outTotal > 0 ? outConn / outTotal * 100 : 0;
-        // Get talk time from outbound sheets
-        let outTalkTime = '';
-        const COL = 'Outbound in-call time (connected calls > x sec)';
-        const WK_COL = 'Week of the year';
-        const _sOut = globalData.supportOut || supportOut;
-        const _rOut = globalData.reveredOut || reveredOut;
-        const _oOut = globalData.onboardOut || onboardOut;
-        const _rkOut = globalData.riskOut || riskOut;
-        const _cOut = globalData.creditOut || creditOut;
-        // Find latest week row from the sheet itself
-        function getOutRow(rows) {
-          const wks = rows.map(r => Number(r[WK_COL])).filter(w => w > 0).sort((a,b) => a-b);
-          const selWk = (!week || week === 'latest') ? wks[wks.length-1] : Number(week);
-          return rows.find(r => Number(r[WK_COL]) === selWk) || {};
-        }
-        if (td.key === 'supportrev') {
-          const sF = getOutRow(_sOut);
-          const rF = getOutRow(_rOut);
-          outTalkTime = sF[COL] || rF[COL] || '';
-        } else if (td.key === 'onboarding') {
-          outTalkTime = getOutRow(_oOut)[COL] || '';
-        } else if (td.key === 'risk') {
-          outTalkTime = getOutRow(_rkOut)[COL] || '';
-        } else if (td.key === 'credit') {
-          outTalkTime = getOutRow(_cOut)[COL] || '';
-        }
         return { key: td.key, label: td.label, outTotal, outConn, connPct, outTalkTime };
       });
     }
