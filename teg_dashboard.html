@@ -905,7 +905,7 @@ function renderDashboard() {
             label: function(ctx) {
               const t = (window._answerTeamSummary || teamSummary)[ctx.dataIndex];
               if (ctx.datasetIndex === 0) return `Received: ${t.inbound}`;
-              return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%)`;
+              return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.inTalkTime)}`;
             }
           }
         }
@@ -946,7 +946,7 @@ function renderDashboard() {
             const t = (window._outboundSummary||[])[ctx.dataIndex];
             if (!t) return '';
             if (ctx.datasetIndex === 0) return `Total outbound: ${t.outTotal}`;
-            return `Connected: ${t.outConn} (${t.connPct.toFixed(1)}%) | Talk time: ${t.outTalkTime||'—'}`;
+            return `Connected: ${t.outConn} (${t.connPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.outTalkTime)}`;
           }
         }}
       },
@@ -1077,6 +1077,27 @@ function renderDashboard() {
   });
 
   initTooltip();
+}
+
+function fmtTalkTime(raw) {
+  if (!raw || raw === '' || raw === '—') return '—';
+  const s = String(raw).trim();
+  // HH:MM:SS string
+  if (s.match(/^\d+:\d{2}:\d{2}$/)) {
+    const parts = s.split(':');
+    const h = parseInt(parts[0]);
+    const m = parseInt(parts[1]);
+    return `${h}h ${m}m`;
+  }
+  // Decimal fraction of a day (Excel serial time)
+  const num = parseFloat(s);
+  if (!isNaN(num) && num > 0) {
+    const totalMins = Math.round(num * 24 * 60);
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    return `${h}h ${m}m`;
+  }
+  return '—';
 }
 
 function resolveHeatTeam(row, hdrs, numTeamMap, agentTeamMapHeat) {
