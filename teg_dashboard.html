@@ -791,7 +791,7 @@ function renderDashboard() {
   const teamDefs = globalData.teamDefs;
   if (answerWeekTabsEl && teamDefs) {
     const supportInRows = teamDefs.find(d => d.key === 'support')?.inR || [];
-    const inWeeks = [...new Set((globalData.teamDefs||[]).find(d=>d.key==='support')?.inR.map(r => Number(r['Week of the year'])).filter(w => w > 0)||[])].sort((a,b) => a-b);
+    const inWeeks = globalData.availableWeeks || [];
     answerWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
       inWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
     answerWeekTabsEl.addEventListener('click', e => {
@@ -964,7 +964,7 @@ function renderDashboard() {
   // Outbound week filter tabs
   const outWeekTabsEl = document.getElementById('outboundWeekTabs');
   if (outWeekTabsEl) {
-    const outWeeks = [...new Set((globalData.supportOut||[]).map(r => Number(r['Week of the year'])).filter(w => w > 0))].sort((a,b) => a-b);
+    const outWeeks = globalData.availableWeeks || [];
     outWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
       outWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
     outWeekTabsEl.addEventListener('click', e => {
