@@ -673,20 +673,6 @@ async function loadDashboard() {
       if (name && t) agentTeamMap[name] = t;
     });
     // Build outbound summary by agent team (for correct Support+Revered grouping)
-    // Parse raw outbound sheet (2D array) into week summary rows
-    function parseOutboundRaw(rawRows) {
-      if (!rawRows || rawRows.length < 2) return [];
-      // Col 0 = week, col 1 = total, col 2 = connected, col 4 = talk time
-      const result = [];
-      for (let i = 1; i < rawRows.length; i++) {
-        const wk = Number(rawRows[i][0]);
-        if (wk > 0) {
-          result.push({ wk, total: Number(rawRows[i][1]||0), conn: Number(rawRows[i][2]||0), time: String(rawRows[i][4]||'') });
-        }
-      }
-      return result;
-    }
-
     function buildOutboundSummary(week) {
       const _sOut  = parseOutboundRaw(globalData.supportOut  || supportOut);
       const _rOut  = parseOutboundRaw(globalData.reveredOut  || reveredOut);
@@ -1100,6 +1086,19 @@ function fmtTalkTime(raw) {
     return `${h}h ${m}m`;
   }
   return '—';
+}
+
+// Parse raw outbound sheet (2D array) into week summary rows
+function parseOutboundRaw(rawRows) {
+  if (!rawRows || rawRows.length < 2) return [];
+  const result = [];
+  for (let i = 1; i < rawRows.length; i++) {
+    const wk = Number(rawRows[i][0]);
+    if (wk > 0) {
+      result.push({ wk, total: Number(rawRows[i][1]||0), conn: Number(rawRows[i][2]||0), time: String(rawRows[i][4]||'') });
+    }
+  }
+  return result;
 }
 
 function resolveHeatTeam(row, hdrs, numTeamMap, agentTeamMapHeat) {
