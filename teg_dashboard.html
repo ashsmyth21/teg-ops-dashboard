@@ -654,7 +654,7 @@ async function loadDashboard() {
       const t = String(r['team']||'').trim();
       if (name && t) agentTeamMap[name] = t;
     });
-    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap };
+    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap, teamDefs, buildTeamSummary };
 
     // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
     // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
@@ -711,8 +711,11 @@ function renderDashboard() {
 
   // Build answer rate week tabs
   const answerWeekTabsEl = document.getElementById('answerWeekTabs');
-  if (answerWeekTabsEl) {
-    const inWeeks = [...new Set(supportIn.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+  const buildTeamSummary = globalData.buildTeamSummary;
+  const teamDefs = globalData.teamDefs;
+  if (answerWeekTabsEl && teamDefs) {
+    const supportInRows = teamDefs.find(d => d.key === 'support')?.inR || [];
+    const inWeeks = [...new Set(supportInRows.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
     answerWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
       inWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
     answerWeekTabsEl.addEventListener('click', e => {
