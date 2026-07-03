@@ -180,7 +180,16 @@ thead th.col-team {
     <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
 
     <div class="two-col">
-      <div class="card"><div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
+      <div class="card">
+        <div id="answerWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
+          <div class="tabs" id="answerWeekTabs" style="margin-bottom:0">
+            <button class="tab active" data-week="latest">Latest</button>
+          </div>
+        </div>
+        <div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div>
+        <div class="chart-wrap"><canvas id="answerChart"></canvas></div>
+      </div>
       <div class="card"><div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team." data-update="Updated every Monday at 6am">i</button></div><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
     </div>
 
