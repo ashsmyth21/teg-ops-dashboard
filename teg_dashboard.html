@@ -483,15 +483,15 @@ async function loadDashboard() {
       readSheet('call back data'),
       readSheet('cfg_agents '),
       readSheet('Support data inbound'),
-      readSheet('Support outbound'),
+      readSheetRaw('Support outbound'),
       readSheet('Revered data inbound'),
-      readSheet('Revered data outbound'),
+      readSheetRaw('Revered data outbound'),
       readSheet('Onboparding data inbound'),
-      readSheet('Onboparding data outbound'),
+      readSheetRaw('Onboparding data outbound'),
       readSheet('Risk data inbound'),
-      readSheet('Risk data outbound'),
+      readSheetRaw('Risk data outbound'),
       readSheet('Credit control inbound'),
-      readSheet('Credit control outbound'),
+      readSheetRaw('Credit control outbound'),
       readSheet('Key accounts inbound'),
       readSheet('Key accounts outbound'),
       readSheet('Smartbook inbound'),
@@ -673,46 +673,48 @@ async function loadDashboard() {
       if (name && t) agentTeamMap[name] = t;
     });
     // Build outbound summary by agent team (for correct Support+Revered grouping)
-    function buildOutboundSummary(week) {
-      const COL_TOT  = 'Outbound calls';
-      const COL_CONN = 'Outbound calls (connected calls > x sec)';
-      const COL_TIME = 'Outbound in-call time (connected calls > x sec)';
-      const WK_COL   = 'Week of the year';
-
-      const _sOut  = globalData.supportOut  || supportOut;
-      const _rOut  = globalData.reveredOut  || reveredOut;
-      const _oOut  = globalData.onboardOut  || onboardOut;
-      const _rkOut = globalData.riskOut     || riskOut;
-      const _cOut  = globalData.creditOut   || creditOut;
-
-      function getOutRow(rows) {
-        const wks = rows.map(r => Number(r[WK_COL])).filter(w => w > 0).sort((a,b) => a-b);
-        const selWk = (!week || week === 'latest') ? wks[wks.length-1] : Number(week);
-        return rows.find(r => Number(r[WK_COL]) === selWk) || {};
+    // Parse raw outbound sheet (2D array) into week summary rows
+    function parseOutboundRaw(rawRows) {
+      if (!rawRows || rawRows.length < 2) return [];
+      // Col 0 = week, col 1 = total, col 2 = connected, col 4 = talk time
+      const result = [];
+      for (let i = 1; i < rawRows.length; i++) {
+        const wk = Number(rawRows[i][0]);
+        if (wk > 0) {
+          result.push({ wk, total: Number(rawRows[i][1]||0), conn: Number(rawRows[i][2]||0), time: String(rawRows[i][4]||'') });
+        }
       }
+      return result;
+    }
 
-      function rowToStats(f) {
-        return {
-          total: Number(f[COL_TOT]  || 0),
-          conn:  Number(f[COL_CONN] || 0),
-          time:  String(f[COL_TIME] || ''),
-        };
+    function buildOutboundSummary(week) {
+      const _sOut  = parseOutboundRaw(globalData.supportOut  || supportOut);
+      const _rOut  = parseOutboundRaw(globalData.reveredOut  || reveredOut);
+      const _oOut  = parseOutboundRaw(globalData.onboardOut  || onboardOut);
+      const _rkOut = parseOutboundRaw(globalData.riskOut     || riskOut);
+      const _cOut  = parseOutboundRaw(globalData.creditOut   || creditOut);
+
+      function getRow(parsed) {
+        if (!parsed.length) return { wk:0, total:0, conn:0, time:'' };
+        const wks = parsed.map(r => r.wk).sort((a,b) => a-b);
+        const selWk = (!week || week === 'latest') ? wks[wks.length-1] : Number(week);
+        return parsed.find(r => r.wk === selWk) || { wk:0, total:0, conn:0, time:'' };
       }
 
       const OUTBOUND_TEAMS = [
-        { key:'supportrev', label:'Support + Revered', rows: [_sOut, _rOut] },
-        { key:'onboarding', label:'Onboarding',        rows: [_oOut] },
-        { key:'risk',       label:'Risk',              rows: [_rkOut] },
-        { key:'credit',     label:'Credit ctrl',       rows: [_cOut] },
+        { key:'supportrev', label:'Support + Revered', sheets: [_sOut, _rOut] },
+        { key:'onboarding', label:'Onboarding',        sheets: [_oOut] },
+        { key:'risk',       label:'Risk',              sheets: [_rkOut] },
+        { key:'credit',     label:'Credit ctrl',       sheets: [_cOut] },
       ];
 
       return OUTBOUND_TEAMS.map(td => {
         let outTotal = 0, outConn = 0, outTalkTime = '';
-        td.rows.forEach(rows => {
-          const s = rowToStats(getOutRow(rows));
-          outTotal += s.total;
-          outConn  += s.conn;
-          if (!outTalkTime && s.time) outTalkTime = s.time;
+        td.sheets.forEach(parsed => {
+          const r = getRow(parsed);
+          outTotal += r.total;
+          outConn  += r.conn;
+          if (!outTalkTime && r.time) outTalkTime = r.time;
         });
         const connPct = outTotal > 0 ? outConn / outTotal * 100 : 0;
         return { key: td.key, label: td.label, outTotal, outConn, connPct, outTalkTime };
@@ -954,7 +956,10 @@ function renderDashboard() {
   // Outbound week filter tabs
   const outWeekTabsEl = document.getElementById('outboundWeekTabs');
   if (outWeekTabsEl) {
-    const outWeeks = globalData.availableWeeks || [];
+    const outWeeks = [...new Set([
+      ...(globalData.availableWeeks||[]),
+      ...parseOutboundRaw(globalData.supportOut||[]).map(r=>r.wk)
+    ])].filter(w=>w>0).sort((a,b)=>a-b);
     outWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
       outWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
     outWeekTabsEl.addEventListener('click', e => {
