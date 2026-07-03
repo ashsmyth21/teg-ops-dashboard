@@ -704,26 +704,34 @@ async function loadDashboard() {
         const inWeeks = [...new Set(supportOut.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
         const latestInWeek = Number(inWeeks[inWeeks.length - 1]);
         const selInWeek = (!week || week === 'latest') ? latestInWeek : Number(week);
+        const COL = 'Outbound in-call time (connected calls > x sec)';
+        const _sOut = globalData.supportOut || supportOut;
+        const _rOut = globalData.reveredOut || reveredOut;
+        const _oOut = globalData.onboardOut || onboardOut;
+        const _rkOut = globalData.riskOut || riskOut;
+        const _cOut = globalData.creditOut || creditOut;
         if (td.key === 'supportrev') {
-          const sF = supportOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          const rF = reveredOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          outTalkTime = String(sF['Outbound in-call time (connected calls > x sec)'] || rF['Outbound in-call time (connected calls > x sec)'] || '');
+          const sF = _sOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          const rF = _rOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          const sTime = Number(sF[COL] || 0);
+          const rTime = Number(rF[COL] || 0);
+          outTalkTime = String(sTime + rTime || '');
         } else if (td.key === 'onboarding') {
-          const f = onboardOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          outTalkTime = String(f['Outbound in-call time (connected calls > x sec)'] || '');
+          const f = _oOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          outTalkTime = String(f[COL] || '');
         } else if (td.key === 'risk') {
-          const f = riskOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          outTalkTime = String(f['Outbound in-call time (connected calls > x sec)'] || '');
+          const f = _rkOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          outTalkTime = String(f[COL] || '');
         } else if (td.key === 'credit') {
-          const f = creditOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
-          outTalkTime = String(f['Outbound in-call time (connected calls > x sec)'] || '');
+          const f = _cOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          outTalkTime = String(f[COL] || '');
         }
         return { key: td.key, label: td.label, outTotal, outConn, connPct, outTalkTime };
       });
     }
     const outboundSummary = buildOutboundSummary('latest');
 
-    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap, teamDefs, buildTeamSummary, buildOutboundSummary, outboundSummary, supportOut, reveredOut, onboardOut, riskOut, creditOut };
+    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap, teamDefs, buildTeamSummary, buildOutboundSummary, outboundSummary, supportOut, reveredOut, onboardOut: onboardOut, riskOut, creditOut };
 
     // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
     // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
