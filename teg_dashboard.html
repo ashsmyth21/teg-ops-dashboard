@@ -506,23 +506,28 @@ async function loadDashboard() {
       { key:'onboarding',  label:'Onboarding',  inR:onboardIn,   outR:onboardOut  },
       { key:'risk',        label:'Risk',        inR:riskIn,      outR:riskOut     },
       { key:'credit',      label:'Credit ctrl', inR:creditIn,    outR:creditOut   },
-      { key:'keyaccounts', label:'Key accts',   inR:keyIn,       outR:keyOut      },
-      { key:'smartbook',   label:'Smartbook',   inR:smartIn,     outR:smartOut    },
     ];
-    const teamSummary = teamDefs.map(def => {
-      const inF  = def.inR[0]  || {};
-      const outF = def.outR[0] || {};
-      return {
-        key: def.key, label: def.label,
-        inbound:   Number(inF['Inbound calls'])  || 0,
-        answered:  Number(inF['Answered inbound']) || 0,
-        answerPct: (parseFloat(inF['Percentage of answered inbound calls']) || 0) * 100,
-        outbound:  Number(outF['Outbound calls']) || 0,
-        connOut:   Number(outF['Outbound calls (connected calls > x sec)']) || 0,
-        connPct:   (parseFloat(outF['Percentage of Outbound calls (connected calls > x sec)']) || 0) * 100,
-        missed:    Number(inF['Unanswered inbound calls']) || 0,
-      };
-    });
+    // Build teamSummary for selected week
+    function buildTeamSummary(week) {
+      const allInWeeks = [...new Set(supportIn.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+      const latestInWeek = Number(allInWeeks[allInWeeks.length - 1]);
+      const selectedInWeek = (!week || week === 'latest') ? latestInWeek : Number(week);
+      return teamDefs.map(def => {
+        const inF  = def.inR.find(r => Number(r['Week of the year']) === selectedInWeek) || def.inR[0] || {};
+        const outF = def.outR.find(r => Number(r['Week of the year']) === selectedInWeek) || def.outR[0] || {};
+        return {
+          key: def.key, label: def.label,
+          inbound:   Number(inF['Inbound calls'])  || 0,
+          answered:  Number(inF['Answered inbound']) || 0,
+          answerPct: (parseFloat(inF['Percentage of answered inbound calls']) || 0) * 100,
+          outbound:  Number(outF['Outbound calls']) || 0,
+          connOut:   Number(outF['Outbound calls (connected calls > x sec)']) || 0,
+          connPct:   (parseFloat(outF['Percentage of Outbound calls (connected calls > x sec)']) || 0) * 100,
+          missed:    Number(inF['Unanswered inbound calls']) || 0,
+        };
+      });
+    }
+    const teamSummary = buildTeamSummary('latest');
 
     // ---- Agent team map from cfg_agents ----
     const agentTeam = {};
@@ -695,6 +700,29 @@ function renderDashboard() {
 
   document.getElementById('weekBadge').textContent = 'Week ' + weekNum;
 
+  // Build answer rate week tabs
+  const answerWeekTabsEl = document.getElementById('answerWeekTabs');
+  if (answerWeekTabsEl) {
+    const inWeeks = [...new Set(supportIn.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+    answerWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
+      inWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
+    answerWeekTabsEl.addEventListener('click', e => {
+      const btn = e.target.closest('.tab'); if (!btn) return;
+      document.querySelectorAll('#answerWeekTabs .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      const newSummary = buildTeamSummary(btn.dataset.week);
+      charts.answer.data.labels = newSummary.map(t => t.label);
+      charts.answer.data.datasets[0].data = newSummary.map(t => t.inbound > 0 ? 100 : 0);
+      charts.answer.data.datasets[0].backgroundColor = newSummary.map(t => 'rgba(99,102,241,0.25)');
+      charts.answer.data.datasets[1].data = newSummary.map(t => t.answerPct);
+      charts.answer.data.datasets[1].backgroundColor = newSummary.map(t => t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626');
+      // Store for tooltip
+      window._answerTeamSummary = newSummary;
+      charts.answer.update();
+    });
+    window._answerTeamSummary = teamSummary;
+  }
+
   // Build agent week filter tabs
   const weekTabsEl = document.getElementById('weekTabs');
   const weeks = globalData.availableWeeks || [];
@@ -768,10 +796,44 @@ function renderDashboard() {
   charts.answer = new Chart(document.getElementById('answerChart'), {
     type:'bar', data:{
       labels: teamSummary.map(t=>t.label),
-      datasets:[{label:'Answer %', data:teamSummary.map(t=>t.answerPct),
-        backgroundColor:teamSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626')}]
+      datasets:[
+        {
+          label:'Received',
+          data: teamSummary.map(t => t.inbound > 0 ? 100 : 0),
+          backgroundColor: teamSummary.map(t => 'rgba(99,102,241,0.25)'),
+          barPercentage: 0.9,
+          categoryPercentage: 0.8,
+        },
+        {
+          label:'Answered %',
+          data: teamSummary.map(t => t.answerPct),
+          backgroundColor: teamSummary.map(t => t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626'),
+          barPercentage: 0.9,
+          categoryPercentage: 0.8,
+        }
+      ]
     },
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'}},y:{grid:{display:false}}}}
+    options:{
+      indexAxis:'y',
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          callbacks:{
+            label: function(ctx) {
+              const t = (window._answerTeamSummary || teamSummary)[ctx.dataIndex];
+              if (ctx.datasetIndex === 0) return `Received: ${t.inbound}`;
+              return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%)`;
+            }
+          }
+        }
+      },
+      scales:{
+        x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},
+        y:{grid:{display:false}}
+      }
+    }
   });
 
   charts.outbound = new Chart(document.getElementById('outboundChart'), {
@@ -934,7 +996,7 @@ function buildHeatmapsForWeek(week) {
 
   // Team keys: team_name values + dedicated number_ids
   const HEAT_TEAMS = {
-    'support':    { names: ['Support', 'Support Revered'],                       nums: new Set(['286844','286845','286847','286848','192211']) },
+    'support':    { names: ['Support'],                                          nums: new Set(['286844','286845','286847','286848','192211']) },
     'revered':    { names: ['Support Revered'],                                  nums: new Set([]) },
     'onboarding': { names: ['Onboarding','Onboarding stage 1 calls'],            nums: new Set(['201178']) },
     'risk':       { names: ['Risk and compliance'],                              nums: new Set(['1216204']) },
