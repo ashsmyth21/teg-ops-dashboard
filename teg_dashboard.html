@@ -190,7 +190,16 @@ thead th.col-team {
         <div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div>
         <div class="chart-wrap"><canvas id="answerChart"></canvas></div>
       </div>
-      <div class="card"><div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team." data-update="Updated every Monday at 6am">i</button></div><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
+      <div class="card">
+        <div id="outboundWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
+          <div class="tabs" id="outboundWeekTabs" style="margin-bottom:0">
+            <button class="tab active" data-week="latest">Latest</button>
+          </div>
+        </div>
+        <div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team, based on agent team attribution." data-update="Updated every Monday at 6am">i</button></div>
+        <div class="chart-wrap"><canvas id="outboundChart"></canvas></div>
+      </div>
     </div>
 
     <div class="section-wrap"><div class="section-label">Inbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of inbound call volume by hour (8am–5pm) and day of week. Darker = busier." data-update="Updated every Monday at 6am">i</button></div>
@@ -516,6 +525,13 @@ async function loadDashboard() {
       { key:'risk',        label:'Risk',        inR:riskIn,      outR:riskOut     },
       { key:'credit',      label:'Credit ctrl', inR:creditIn,    outR:creditOut   },
     ];
+    // Outbound chart uses merged Support+Revered and agent-based attribution
+    const outboundTeamDefs = [
+      { key:'supportrev',  label:'Support + Revered', outR:[...supportOut, ...reveredOut] },
+      { key:'onboarding',  label:'Onboarding',        outR:onboardOut },
+      { key:'risk',        label:'Risk',              outR:riskOut },
+      { key:'credit',      label:'Credit ctrl',       outR:creditOut },
+    ];
     // Build teamSummary for selected week
     function buildTeamSummary(week) {
       const allInWeeks = [...new Set(supportIn.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
@@ -529,9 +545,11 @@ async function loadDashboard() {
           inbound:   Number(inF['Inbound calls'])  || 0,
           answered:  Number(inF['Answered inbound']) || 0,
           answerPct: (parseFloat(inF['Percentage of answered inbound calls']) || 0) * 100,
+          inTalkTime: String(inF['Inbound in-call time'] || ''),
           outbound:  Number(outF['Outbound calls']) || 0,
           connOut:   Number(outF['Outbound calls (connected calls > x sec)']) || 0,
           connPct:   (parseFloat(outF['Percentage of Outbound calls (connected calls > x sec)']) || 0) * 100,
+          outTalkTime: String(outF['Outbound in-call time (connected calls > x sec)'] || ''),
           missed:    Number(inF['Unanswered inbound calls']) || 0,
         };
       });
@@ -654,7 +672,58 @@ async function loadDashboard() {
       const t = String(r['team']||'').trim();
       if (name && t) agentTeamMap[name] = t;
     });
-    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap, teamDefs, buildTeamSummary };
+    // Build outbound summary by agent team (for correct Support+Revered grouping)
+    function buildOutboundSummary(week) {
+      const allWeeks = [...new Set(cvRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+      const latestWeek = Number(allWeeks[allWeeks.length - 1]);
+      const selectedWeek = (!week || week === 'latest') ? latestWeek : Number(week);
+      const OUTBOUND_TEAMS = [
+        { key:'supportrev', label:'Support + Revered', match: t => t === 'Support + Revered' },
+        { key:'onboarding', label:'Onboarding',        match: t => t === 'Onboarding' },
+        { key:'risk',       label:'Risk',              match: t => t === 'Risk and compliance' },
+        { key:'credit',     label:'Credit ctrl',       match: t => t === 'Credit Control' },
+        { key:'secondline', label:'2nd line',          match: t => t === '2nd line (Tech support team)' },
+      ];
+      const agentData = {};
+      cvRows.filter(r => Number(r['Week']) === selectedWeek).forEach(r => {
+        const name = String(r['User']||'').trim();
+        if (!name) return;
+        agentData[name] = r;
+      });
+      return OUTBOUND_TEAMS.map(td => {
+        let outTotal = 0, outConn = 0;
+        Object.entries(agentData).forEach(([name, r]) => {
+          const team = agentTeam[name] || '—';
+          if (!td.match(team)) return;
+          outTotal += Number(r['Outbound calls'] || r['Outbound'] || 0);
+          outConn  += Number(r['Connected outbound calls'] || r['Connected outbound'] || 0);
+        });
+        const connPct = outTotal > 0 ? outConn / outTotal * 100 : 0;
+        // Get talk time from outbound sheets
+        let outTalkTime = '';
+        const inWeeks = [...new Set(supportOut.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+        const latestInWeek = Number(inWeeks[inWeeks.length - 1]);
+        const selInWeek = (!week || week === 'latest') ? latestInWeek : Number(week);
+        if (td.key === 'supportrev') {
+          const sF = supportOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          const rF = reveredOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          outTalkTime = String(sF['Outbound in-call time (connected calls > x sec)'] || rF['Outbound in-call time (connected calls > x sec)'] || '');
+        } else if (td.key === 'onboarding') {
+          const f = onboardOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          outTalkTime = String(f['Outbound in-call time (connected calls > x sec)'] || '');
+        } else if (td.key === 'risk') {
+          const f = riskOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          outTalkTime = String(f['Outbound in-call time (connected calls > x sec)'] || '');
+        } else if (td.key === 'credit') {
+          const f = creditOut.find(r => Number(r['Week of the year']) === selInWeek) || {};
+          outTalkTime = String(f['Outbound in-call time (connected calls > x sec)'] || '');
+        }
+        return { key: td.key, label: td.label, outTotal, outConn, connPct, outTalkTime };
+      });
+    }
+    const outboundSummary = buildOutboundSummary('latest');
+
+    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap, teamDefs, buildTeamSummary, buildOutboundSummary, outboundSummary, supportOut, reveredOut, onboardOut, riskOut, creditOut };
 
     // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
     // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
@@ -848,13 +917,62 @@ function renderDashboard() {
     }
   });
 
+  const outSummary = globalData.outboundSummary || [];
+  window._outboundSummary = outSummary;
   charts.outbound = new Chart(document.getElementById('outboundChart'), {
     type:'bar', data:{
-      labels: teamSummary.map(t=>t.label),
-      datasets:[{label:'Connected %',data:teamSummary.map(t=>t.connPct),backgroundColor:'#1d4ed8'}]
+      labels: outSummary.map(t=>t.label),
+      datasets:[
+        {
+          label:'Total outbound',
+          data: outSummary.map(t => t.outTotal > 0 ? 100 : 0),
+          backgroundColor: outSummary.map(() => 'rgba(99,102,241,0.2)'),
+          barPercentage: 0.9, categoryPercentage: 0.8,
+        },
+        {
+          label:'Connected %',
+          data: outSummary.map(t=>t.connPct),
+          backgroundColor:'#1d4ed8',
+          barPercentage: 0.9, categoryPercentage: 0.8,
+        }
+      ]
     },
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'}},y:{grid:{display:false}}}}
+    options:{
+      indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{
+          label: function(ctx) {
+            const t = (window._outboundSummary||[])[ctx.dataIndex];
+            if (!t) return '';
+            if (ctx.datasetIndex === 0) return `Total outbound: ${t.outTotal}`;
+            return `Connected: ${t.outConn} (${t.connPct.toFixed(1)}%) | Talk time: ${t.outTalkTime||'—'}`;
+          }
+        }}
+      },
+      scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},y:{grid:{display:false}}}
+    }
   });
+
+  // Outbound week filter tabs
+  const outWeekTabsEl = document.getElementById('outboundWeekTabs');
+  if (outWeekTabsEl) {
+    const outWeeks = [...new Set((globalData.cvRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+    outWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
+      outWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
+    outWeekTabsEl.addEventListener('click', e => {
+      const btn = e.target.closest('.tab'); if (!btn) return;
+      document.querySelectorAll('#outboundWeekTabs .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      const newOut = globalData.buildOutboundSummary(btn.dataset.week);
+      window._outboundSummary = newOut;
+      charts.outbound.data.labels = newOut.map(t => t.label);
+      charts.outbound.data.datasets[0].data = newOut.map(t => t.outTotal > 0 ? 100 : 0);
+      charts.outbound.data.datasets[0].backgroundColor = newOut.map(() => 'rgba(99,102,241,0.2)');
+      charts.outbound.data.datasets[1].data = newOut.map(t => t.connPct);
+      charts.outbound.update();
+    });
+  }
 
   // Heatmap
   renderHeatmap(currentHeatTeam);
