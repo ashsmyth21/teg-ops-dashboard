@@ -742,7 +742,22 @@ async function loadDashboard() {
         { key:'credit',     label:'Credit ctrl',       sheets: [_cOut] },
       ];
 
-      return OUTBOUND_TEAMS.map(td => {
+      // 2nd line — agent-based from cvRows
+      const allCvWeeks2 = [...new Set(cvRows.map(r => r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
+      const latestCvWk2 = Number(allCvWeeks2[allCvWeeks2.length-1]);
+      const selCvWk2 = (!week||week==='latest') ? latestCvWk2 : Number(week);
+      const secondLineAgents2 = new Set(
+        teamRows.filter(r => String(r['team']||'').trim() === '2nd line (Tech support team)')
+                .map(r => String(r['agent_name']||'').trim())
+      );
+      let slTotal = 0, slConn = 0;
+      cvRows.filter(r => Number(r['Week']) === selCvWk2).forEach(r => {
+        if (!secondLineAgents2.has(String(r['User']||'').trim())) return;
+        slTotal += Number(r['Outbound calls']||r['Outbound']||0);
+        slConn  += Number(r['Connected outbound calls']||r['Connected outbound']||0);
+      });
+
+      const result = OUTBOUND_TEAMS.map(td => {
         let outTotal = 0, outConn = 0, outTalkTime = '';
         td.sheets.forEach(parsed => {
           const r = getRow(parsed);
@@ -753,6 +768,8 @@ async function loadDashboard() {
         const connPct = outTotal > 0 ? outConn / outTotal * 100 : 0;
         return { key: td.key, label: td.label, outTotal, outConn, connPct, outTalkTime };
       });
+      result.push({ key:'secondline', label:'2nd line', outTotal:slTotal, outConn:slConn, connPct: slTotal>0?slConn/slTotal*100:0, outTalkTime:'' });
+      return result;
     }
     const outboundSummary = buildOutboundSummary('latest');
 
