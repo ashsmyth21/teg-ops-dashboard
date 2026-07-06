@@ -189,27 +189,33 @@ thead th.col-team {
     <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
 
     <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="Updated every Monday at 6am">i</button></div>
+    <div id="teamWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
+      <div class="tabs" id="teamWeekTabs" style="margin-bottom:0">
+        <button class="tab active" data-week="latest">Latest</button>
+      </div>
+    </div>
     <div id="teamGrid" class="team-grid"></div>
 
     <div class="two-col">
       <div>
+        <div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div>
         <div id="answerWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
           <div class="tabs" id="answerWeekTabs" style="margin-bottom:0">
             <button class="tab active" data-week="latest">Latest</button>
           </div>
         </div>
-        <div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div>
         <div class="card"><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
       </div>
       <div>
+        <div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team, based on agent team attribution." data-update="Updated every Monday at 6am">i</button></div>
         <div id="outboundWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
           <div class="tabs" id="outboundWeekTabs" style="margin-bottom:0">
             <button class="tab active" data-week="latest">Latest</button>
           </div>
         </div>
-        <div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team, based on agent team attribution." data-update="Updated every Monday at 6am">i</button></div>
         <div class="card"><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
       </div>
     </div>
@@ -486,6 +492,7 @@ async function loadDashboard() {
            cbRows, teamRows,
            supportIn, supportOut, reveredIn, reveredOut,
            onboardIn, onboardOut, riskIn, riskOut, creditIn, creditOut, keyIn, keyOut, smartIn, smartOut,
+           secondLineIn, secondLineOut,
            rawCallsRows] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
@@ -508,6 +515,8 @@ async function loadDashboard() {
       readSheet('Key accounts outbound'),
       readSheet('Smartbook inbound'),
       readSheet('Smartbook outbound'),
+      readSheet('2nd line data inbound'),
+      readSheetRaw('2nd line data outbound'),
       readSheetRaw('raw_calls'),
     ]);
 
@@ -531,11 +540,12 @@ async function loadDashboard() {
 
     // ---- Team summary ----
     const teamDefs = [
-      { key:'support',     label:'Support',     inR:supportIn,   outR:supportOut  },
-      { key:'revered',     label:'Revered',     inR:reveredIn,   outR:reveredOut  },
-      { key:'onboarding',  label:'Onboarding',  inR:onboardIn,   outR:onboardOut  },
-      { key:'risk',        label:'Risk',        inR:riskIn,      outR:riskOut     },
-      { key:'credit',      label:'Credit ctrl', inR:creditIn,    outR:creditOut   },
+      { key:'support',     label:'Support',     inR:supportIn,     outR:supportOut    },
+      { key:'revered',     label:'Revered',     inR:reveredIn,     outR:reveredOut    },
+      { key:'onboarding',  label:'Onboarding',  inR:onboardIn,     outR:onboardOut    },
+      { key:'risk',        label:'Risk',        inR:riskIn,        outR:riskOut       },
+      { key:'credit',      label:'Credit ctrl', inR:creditIn,      outR:creditOut     },
+      { key:'secondline',  label:'2nd line',    inR:secondLineIn,  outR:[]            },
     ];
     // Outbound chart uses merged Support+Revered and agent-based attribution
     const outboundTeamDefs = [
@@ -549,19 +559,40 @@ async function loadDashboard() {
       const allInWeeks = [...new Set(supportIn.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
       const latestInWeek = Number(allInWeeks[allInWeeks.length - 1]);
       const selectedInWeek = (!week || week === 'latest') ? latestInWeek : Number(week);
+
+      // Build cvRows lookup for agent-based outbound (2nd line)
+      const allCvWeeks = [...new Set(cvRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+      const latestCvWeek = Number(allCvWeeks[allCvWeeks.length-1]);
+      const selCvWeek = (!week || week === 'latest') ? latestCvWeek : Number(week);
+      const cvWeekRows = cvRows.filter(r => Number(r['Week']) === selCvWeek);
+
       return teamDefs.map(def => {
         const inF  = def.inR.find(r => Number(r['Week of the year']) === selectedInWeek) || def.inR[0] || {};
         const outF = def.outR.find(r => Number(r['Week of the year']) === selectedInWeek) || def.outR[0] || {};
+
+        let outbound = Number(outF['Outbound calls']) || 0;
+        let connOut  = Number(outF['Outbound calls (connected calls > x sec)']) || 0;
+        let outTalkTime = String(outF['Outbound in-call time (connected calls > x sec)'] || '');
+
+        // 2nd line — use agent-based outbound from cvRows
+        if (def.key === 'secondline') {
+          outbound = 0; connOut = 0;
+          cvWeekRows.forEach(r => {
+            const agent = String(r['User']||'').trim();
+            if ((agentTeam[agent]||'') !== '2nd line (Tech support team)') return;
+            outbound += Number(r['Outbound calls']||r['Outbound']||0);
+            connOut  += Number(r['Connected outbound calls']||r['Connected outbound']||0);
+          });
+        }
+
+        const connPct = outbound > 0 ? connOut / outbound * 100 : 0;
         return {
           key: def.key, label: def.label,
           inbound:   Number(inF['Inbound calls'])  || 0,
           answered:  Number(inF['Answered inbound']) || 0,
           answerPct: (parseFloat(inF['Percentage of answered inbound calls']) || 0) * 100,
           inTalkTime: String(inF['Inbound in-call time'] || ''),
-          outbound:  Number(outF['Outbound calls']) || 0,
-          connOut:   Number(outF['Outbound calls (connected calls > x sec)']) || 0,
-          connPct:   (parseFloat(outF['Percentage of Outbound calls (connected calls > x sec)']) || 0) * 100,
-          outTalkTime: String(outF['Outbound in-call time (connected calls > x sec)'] || ''),
+          outbound, connOut, connPct, outTalkTime,
           missed:    Number(inF['Unanswered inbound calls']) || 0,
         };
       });
@@ -775,6 +806,35 @@ function renderDashboard() {
 
   document.getElementById('weekBadge').textContent = 'Week ' + weekNum;
 
+  // Team overview week filter tabs
+  const teamWeekTabsEl = document.getElementById('teamWeekTabs');
+  if (teamWeekTabsEl) {
+    const tmWeeks = globalData.availableWeeks || [];
+    teamWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
+      tmWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
+    teamWeekTabsEl.addEventListener('click', e => {
+      const btn = e.target.closest('.tab'); if (!btn) return;
+      document.querySelectorAll('#teamWeekTabs .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      const newSummary = globalData.buildTeamSummary(btn.dataset.week);
+      const TC = {support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c'};
+      document.getElementById('teamGrid').innerHTML = newSummary.map(t => {
+        const tc = TC[t.key]||'#888';
+        const ac = t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
+        return `<div class="team-card">
+          <div class="tc-name" style="color:${tc}">${t.label}</div>
+          <div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div>
+          <div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div>
+          <div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div>
+          <div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div>
+          <div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div>
+          <div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div>
+          <div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div>
+        </div>`;
+      }).join('');
+    });
+  }
+
   // Build answer rate week tabs
   const answerWeekTabsEl = document.getElementById('answerWeekTabs');
   const buildTeamSummary = globalData.buildTeamSummary;
@@ -902,7 +962,7 @@ function renderDashboard() {
   }
 
   // Team cards
-  const TC = {support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',keyaccounts:'#be185d',smartbook:'#374151'};
+  const TC = {support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c',keyaccounts:'#be185d',smartbook:'#374151'};
   document.getElementById('teamGrid').innerHTML = teamSummary.map(t => {
     const tc = TC[t.key]||'#888';
     const ac = t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
