@@ -670,6 +670,42 @@ async function loadDashboard() {
       if (name) _aiMap[name] = String(r['Summary']||'');
     });
 
+    // ---- Call counts from raw_calls ----
+    const _rawCallCounts = {};
+    if (rawCallsRows && rawCallsRows.length > 1) {
+      const rcHdrs = rawCallsRows[0].map(h => String(h).trim());
+      const rcDir  = rcHdrs.indexOf('direction');
+      const rcAns  = rcHdrs.indexOf('answered_at');
+      const rcUser = rcHdrs.indexOf('user_name');
+      const rcDur  = rcHdrs.indexOf('duration');
+      const rcSt   = rcHdrs.indexOf('started_at');
+      const allWks3 = [...new Set(agentStatsRows.map(r => r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
+      const latestWk3 = Number(allWks3[allWks3.length-1]);
+      const selWk3 = (currentWeek === 'latest' || !currentWeek) ? latestWk3 : Number(currentWeek);
+      const jan4c = new Date(Date.UTC(2026,0,4));
+      const jan4Dayc = (jan4c.getUTCDay()+6)%7;
+      const week1Monc = new Date(jan4c.getTime()-jan4Dayc*86400000);
+      const weekMonc = new Date(week1Monc.getTime()+(selWk3-1)*7*86400000);
+      const wkStartc = Math.floor(weekMonc.getTime()/1000);
+      const wkEndc   = wkStartc + 7*86400;
+      for (let i = 1; i < rawCallsRows.length; i++) {
+        const row = rawCallsRows[i];
+        const ts = Number(row[rcSt]);
+        if (!ts || ts < wkStartc || ts >= wkEndc) continue;
+        const user = String(row[rcUser]||'').trim();
+        if (!user) continue;
+        const dir = String(row[rcDir]||'').trim();
+        const ans = row[rcAns] !== '' && row[rcAns] != null;
+        const dur = Number(row[rcDur]||0);
+        if (!_rawCallCounts[user]) _rawCallCounts[user] = { answeredInbound:0, connectedOutbound:0, totalOutbound:0 };
+        if (dir === 'inbound' && ans) _rawCallCounts[user].answeredInbound++;
+        if (dir === 'outbound') {
+          _rawCallCounts[user].totalOutbound++;
+          if (ans && dur >= 10) _rawCallCounts[user].connectedOutbound++;
+        }
+      }
+    }
+
     // ---- Talk time from raw_calls ----
     const _talkTimeMap = {};
     if (rawCallsRows && rawCallsRows.length > 1) {
@@ -734,8 +770,10 @@ async function loadDashboard() {
       const cv  = cvMap[name] || null;
       const zd  = zdMap[name] || null;
       const ai  = _aiMap[name] || null;
-      const inb = cv ? (Number(cv['Answered inbound calls']||cv['Answered inbound']||0)) : 0;
-      const out = cv ? (Number(cv['Connected outbound calls']||cv['Connected outbound']||0)) : 0;
+      const _rc = _rawCallCounts ? (_rawCallCounts[name] || null) : null;
+      const inb = cv ? (Number(cv['Answered inbound calls']||cv['Answered inbound']||0)) : (_rc ? _rc.answeredInbound : 0);
+      const out = cv ? (Number(cv['Connected outbound calls']||cv['Connected outbound']||0)) : (_rc ? _rc.connectedOutbound : 0);
+      const totalOut = cv ? (Number(cv['Outbound calls']||cv['Outbound']||0)) : (_rc ? _rc.totalOutbound : 0);
       const gs  = k => s[k] || 0;
       const allowedAcw    = (inb + out) * 180;
       const investigation = (out * 60) + (inb * 30);
@@ -754,7 +792,7 @@ async function loadDashboard() {
                after_call_work:gs('after_call_work'), allowed_acw:allowedAcw, investigation,
                doing_back_office:gs('doing_back_office'), in_training:gs('in_training'),
                out_for_lunch:gs('out_for_lunch'), on_a_break:gs('on_a_break'),
-               inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai,
+               inbound_calls:inb, outbound_calls:out, total_outbound:totalOut, callUtil, zdUtil, partWeek, cv, zd, ai,
                talk_inbound: _tt.inbound, talk_outbound: _tt.outbound };
     }).sort((a,b) => (b.callUtil+b.zdUtil) - (a.callUtil+a.zdUtil));
 
@@ -1788,6 +1826,39 @@ function buildAgentsForWeek(week) {
     }
   }
 
+  // Build call counts from raw_calls (used when cvRows missing for this week)
+  const rawCallCounts = {};
+  if (rawRows && rawRows.length > 1) {
+    const rHdrs2 = rawRows[0].map(h => String(h).trim());
+    const rDir2  = rHdrs2.indexOf('direction');
+    const rAns2  = rHdrs2.indexOf('answered_at');
+    const rUser2 = rHdrs2.indexOf('user_name');
+    const rDur2  = rHdrs2.indexOf('duration');
+    const rStart2 = rHdrs2.indexOf('started_at');
+    const jan4c = new Date(Date.UTC(2026,0,4));
+    const jan4Dayc = (jan4c.getUTCDay()+6)%7;
+    const week1Monc = new Date(jan4c.getTime()-jan4Dayc*86400000);
+    const weekMonc = new Date(week1Monc.getTime()+(selectedWeek-1)*7*86400000);
+    const wkStartc = Math.floor(weekMonc.getTime()/1000);
+    const wkEndc   = wkStartc + 7*86400;
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const ts = Number(row[rStart2]);
+      if (!ts || ts < wkStartc || ts >= wkEndc) continue;
+      const user = String(row[rUser2]||'').trim();
+      if (!user) continue;
+      const dir = String(row[rDir2]||'').trim();
+      const ans = row[rAns2] !== '' && row[rAns2] != null;
+      const dur = Number(row[rDur2]||0);
+      if (!rawCallCounts[user]) rawCallCounts[user] = { answeredInbound: 0, connectedOutbound: 0, totalOutbound: 0 };
+      if (dir === 'inbound' && ans) rawCallCounts[user].answeredInbound++;
+      if (dir === 'outbound') {
+        rawCallCounts[user].totalOutbound++;
+        if (ans && dur >= 10) rawCallCounts[user].connectedOutbound++;
+      }
+    }
+  }
+
   // Zendesk for selected week
   const zdMap = {};
   zdRows.filter(r => Number(r['Week']) === selectedWeek).forEach(r => {
@@ -1812,8 +1883,10 @@ function buildAgentsForWeek(week) {
     const cv = cvMap[name] || null;
     const zd = zdMap[name] || null;
     const ai = globalData.aiMap ? (globalData.aiMap[name] || null) : null;
-    const inb = cv ? (Number(cv['Answered inbound calls']||cv['Answered inbound']||0)) : 0;
-    const out = cv ? (Number(cv['Connected outbound calls']||cv['Connected outbound']||0)) : 0;
+    const rc = rawCallCounts[name] || null;
+    const inb = cv ? (Number(cv['Answered inbound calls']||cv['Answered inbound']||0)) : (rc ? rc.answeredInbound : 0);
+    const out = cv ? (Number(cv['Connected outbound calls']||cv['Connected outbound']||0)) : (rc ? rc.connectedOutbound : 0);
+    const totalOut = cv ? (Number(cv['Outbound calls']||cv['Outbound']||0)) : (rc ? rc.totalOutbound : 0);
     const gs = k => s[k] || 0;
     const allowedAcw = (inb + out) * 180;
     const investigation = (out * 60) + (inb * 30);
@@ -1831,7 +1904,7 @@ function buildAgentsForWeek(week) {
              after_call_work:gs('after_call_work'), allowed_acw:allowedAcw, investigation,
              doing_back_office:gs('doing_back_office'), in_training:gs('in_training'),
              out_for_lunch:gs('out_for_lunch'), on_a_break:gs('on_a_break'),
-             inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai,
+             inbound_calls:inb, outbound_calls:out, total_outbound:totalOut, callUtil, zdUtil, partWeek, cv, zd, ai,
              talk_inbound: tt.inbound, talk_outbound: tt.outbound };
   }).sort((a,b) => (b.callUtil+b.zdUtil) - (a.callUtil+a.zdUtil));
 }
@@ -1877,9 +1950,7 @@ function renderAgents(team) {
     const lDisp = ls>0 ? (lh>0 ? `${lh}h ${lm}m` : `${lm}m`) : '—';
     const lCell = `<td style="color:var(--amber)">${lDisp} ${lunchFlag(ls,a.partWeek)}</td>`;
     const cv = a.cv; const zd = a.zd;
-    const cvC = cv
-      ? `<td>${dv(cv['Answered inbound calls']||cv['Answered inbound'])}</td><td>${dv(cv['Connected outbound calls']||cv['Connected outbound'])}</td><td>${dv(cv['Outbound calls']||cv['Outbound'])}</td>`
-      : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
+    const cvC = `<td>${dv(a.inbound_calls)}</td><td>${dv(a.outbound_calls)}</td><td>${dv(a.total_outbound)}</td>`;
     const ttIn  = a.talk_inbound  > 0 ? fmtHrs(a.talk_inbound)  : '—';
     const ttOut = a.talk_outbound > 0 ? fmtHrs(a.talk_outbound) : '—';
     const ttC = `<td style="color:var(--green)">${fh(ttIn)}</td><td style="color:var(--green)">${fh(ttOut)}</td>`;
