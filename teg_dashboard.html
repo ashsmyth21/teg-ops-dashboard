@@ -464,9 +464,9 @@ function parseTimeSec(t) {
   const s = String(t);
   const parts = s.split(':');
   if (parts.length === 3) return (+parts[0])*3600 + (+parts[1])*60 + (+parts[2]);
-  // Decimal hours (e.g. 5.775 = 5h 46m)
+  // Decimal fraction of a day (Excel serial time) e.g. 1.047 = 1.047 days = ~25h
   const num = parseFloat(t);
-  if (!isNaN(num) && num > 0) return Math.round(num * 3600);
+  if (!isNaN(num) && num > 0) return Math.round(num * 86400);
   return 0;
 }
 
