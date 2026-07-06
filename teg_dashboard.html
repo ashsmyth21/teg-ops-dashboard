@@ -299,6 +299,8 @@ thead th.col-team {
             <th style="color:var(--green)">Ans. inbound</th>
             <th style="color:var(--green)">Conn. outbound</th>
             <th style="color:var(--green)">Outbound</th>
+            <th style="color:var(--green)">In talk (in)</th>
+            <th style="color:var(--green)">In talk (out)</th>
             <th style="color:var(--keyaccts)">Internal</th>
             <th style="color:var(--keyaccts)">Public</th>
             <th style="color:var(--keyaccts)">Solved</th>
@@ -1715,6 +1717,40 @@ function buildAgentsForWeek(week) {
     if (name) cvMap[name] = r;
   });
 
+  // Calculate per-agent talk times from raw_calls for the selected week
+  const rawRows = globalData.rawCallsRows;
+  const talkTimeMap = {};
+  if (rawRows && rawRows.length > 1) {
+    const rHdrs = rawRows[0].map(h => String(h).trim());
+    const rDir   = rHdrs.indexOf('direction');
+    const rStart = rHdrs.indexOf('started_at');
+    const rAns   = rHdrs.indexOf('answered_at');
+    const rEnd   = rHdrs.indexOf('ended_at');
+    const rUser  = rHdrs.indexOf('user_name');
+    // Get week date range
+    const jan4 = new Date(Date.UTC(2026,0,4));
+    const jan4Day = (jan4.getUTCDay()+6)%7;
+    const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
+    const weekMon = new Date(week1Mon.getTime()+(selectedWeek-1)*7*86400000);
+    const wkStart = Math.floor(weekMon.getTime()/1000);
+    const wkEnd   = wkStart + 7*86400;
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const ts = Number(row[rStart]);
+      if (!ts || ts < wkStart || ts >= wkEnd) continue;
+      const ans = row[rAns]; const end = row[rEnd];
+      if (!ans || !end || ans === '' || end === '') continue;
+      const talkSecs = Number(end) - Number(ans);
+      if (talkSecs <= 0) continue;
+      const user = String(row[rUser]||'').trim();
+      const dir  = String(row[rDir]||'').trim();
+      if (!user) continue;
+      if (!talkTimeMap[user]) talkTimeMap[user] = { inbound: 0, outbound: 0 };
+      if (dir === 'inbound')  talkTimeMap[user].inbound  += talkSecs;
+      if (dir === 'outbound') talkTimeMap[user].outbound += talkSecs;
+    }
+  }
+
   // Zendesk for selected week
   const zdMap = {};
   zdRows.filter(r => Number(r['Week']) === selectedWeek).forEach(r => {
@@ -1753,11 +1789,13 @@ function buildAgentsForWeek(week) {
     const activeSecs = gs('available') + gs('in_call') + gs('after_call_work') + gs('doing_back_office') + gs('in_training') + gs('do_not_disturb');
     const partWeek = false;
     const team = agentTeamMap[name] || (globalData.agentTeamMap ? (globalData.agentTeamMap[name] || '—') : '—');
+    const tt = talkTimeMap[name] || { inbound: 0, outbound: 0 };
     return { name, team, excess_acw:excessAcw, available:gs('available'), in_call:gs('in_call'),
              after_call_work:gs('after_call_work'), allowed_acw:allowedAcw, investigation,
              doing_back_office:gs('doing_back_office'), in_training:gs('in_training'),
              out_for_lunch:gs('out_for_lunch'), on_a_break:gs('on_a_break'),
-             inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai };
+             inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai,
+             talk_inbound: tt.inbound, talk_outbound: tt.outbound };
   }).sort((a,b) => (b.callUtil+b.zdUtil) - (a.callUtil+a.zdUtil));
 }
 
@@ -1807,6 +1845,9 @@ function renderAgents(team) {
     const cvC = cv
       ? `<td>${dv(cv['Answered inbound calls']||cv['Answered inbound'])}</td><td>${dv(cv['Connected outbound calls']||cv['Connected outbound'])}</td><td>${dv(cv['Outbound calls']||cv['Outbound'])}</td>`
       : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
+    const ttIn  = a.talk_inbound  > 0 ? fmtHrs(a.talk_inbound)  : '—';
+    const ttOut = a.talk_outbound > 0 ? fmtHrs(a.talk_outbound) : '—';
+    const ttC = `<td style="color:var(--green)">${fh(ttIn)}</td><td style="color:var(--green)">${fh(ttOut)}</td>`;
     const zdC = zd
       ? `<td>${dv(zd.internal)}</td><td>${dv(zd.public)}</td><td style="font-weight:600;color:${zd.solved>0?'var(--keyaccts)':'var(--subtle)'}">${zd.solved||'—'}</td>`
       : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
@@ -1823,7 +1864,7 @@ function renderAgents(team) {
       <td>${fh(fmtHrs(a.doing_back_office))}</td>
       <td>${fh(fmtHrs(a.in_training))}</td>
       ${lCell}
-      ${cvC}${zdC}
+      ${cvC}${ttC}${zdC}
       <td><span class="score-pill" style="background:${cs.bg};color:${cs.col}">${a.callUtil}%</span></td>
       <td><span class="score-pill" style="background:${zs.bg};color:${zs.col}">${a.zdUtil}%</span></td>
     </tr>`;
