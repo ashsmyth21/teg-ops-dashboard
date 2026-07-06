@@ -34,7 +34,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .metric-card .lbl{font-size:11px;color:var(--muted);margin-bottom:2px}
 .metric-card .val{font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
 .metric-card .sub{font-size:11px;color:var(--subtle);margin-top:3px}
-.team-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:4px}
+.team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:4px}
 .team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
 .team-card .tc-name{font-size:11px;font-weight:600;margin-bottom:8px}
 .team-card .tc-row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px}
@@ -192,7 +192,7 @@ thead th.col-team {
     <div id="teamGrid" class="team-grid"></div>
 
     <div class="two-col">
-      <div class="card">
+      <div>
         <div id="answerWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
           <div class="tabs" id="answerWeekTabs" style="margin-bottom:0">
@@ -200,9 +200,9 @@ thead th.col-team {
           </div>
         </div>
         <div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div>
-        <div class="chart-wrap"><canvas id="answerChart"></canvas></div>
+        <div class="card"><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
       </div>
-      <div class="card">
+      <div>
         <div id="outboundWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
           <div class="tabs" id="outboundWeekTabs" style="margin-bottom:0">
@@ -210,7 +210,7 @@ thead th.col-team {
           </div>
         </div>
         <div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team, based on agent team attribution." data-update="Updated every Monday at 6am">i</button></div>
-        <div class="chart-wrap"><canvas id="outboundChart"></canvas></div>
+        <div class="card"><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
       </div>
     </div>
 
