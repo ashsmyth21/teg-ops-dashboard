@@ -577,9 +577,14 @@ async function loadDashboard() {
         // 2nd line — use agent-based outbound from cvRows
         if (def.key === 'secondline') {
           outbound = 0; connOut = 0;
+          // Use teamRows directly — avoids agentTeam forward reference
+          const secondLineAgents = new Set(
+            teamRows.filter(r => String(r['team']||'').trim() === '2nd line (Tech support team)')
+                    .map(r => String(r['agent_name']||'').trim())
+          );
           cvWeekRows.forEach(r => {
             const agent = String(r['User']||'').trim();
-            if ((agentTeam[agent]||'') !== '2nd line (Tech support team)') return;
+            if (!secondLineAgents.has(agent)) return;
             outbound += Number(r['Outbound calls']||r['Outbound']||0);
             connOut  += Number(r['Connected outbound calls']||r['Connected outbound']||0);
           });
