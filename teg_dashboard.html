@@ -452,11 +452,12 @@ async function readSheetRaw(sheetName) {
 // ============================================================
 function fmtHrs(sec) {
   if (!sec || sec <= 0) return '—';
-  const hrs = sec / 3600;
-  if (hrs >= 1) return Math.round(hrs) + 'h';
-  const mins = Math.round(hrs * 60);
-  if (mins <= 0) return '—';
-  return mins + 'm';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  if (m > 0) return `${m}m`;
+  return '—';
 }
 
 function parseTimeSec(t) {
