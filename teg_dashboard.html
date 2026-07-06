@@ -165,7 +165,13 @@ thead th.col-team {
   </div>
 
   <div class="dash">
-    <div class="section-wrap"><div class="section-label">Company overview</div><button class="info-btn" data-tip="Total, missed, inbound and outbound call counts for the current week (Mon–Sun)." data-update="Updated every Monday at 6am">i</button></div>
+    <div id="overviewWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
+      <div class="tabs" id="overviewWeekTabs" style="margin-bottom:0">
+        <button class="tab active" data-week="latest">Latest</button>
+      </div>
+    </div>
+    <div class="section-wrap" style="margin-top:0"><div class="section-label">Operations overview</div><button class="info-btn" data-tip="Total, missed, inbound and outbound call counts for ops teams (Support, Revered, Onboarding, Risk, Credit control, 2nd line)." data-update="Live from raw calls">i</button></div>
     <div class="metrics-row">
       <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub">Mon–Sun</div></div>
       <div class="metric-card"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div>
@@ -822,14 +828,78 @@ function renderDashboard() {
   });
 
   // Metrics
-  const mp = v => totals.total > 0 ? ((v/totals.total)*100).toFixed(1)+'% of total' : '—';
-  document.getElementById('mTotal').textContent    = totals.total.toLocaleString();
-  document.getElementById('mMissed').textContent   = totals.missed.toLocaleString();
-  document.getElementById('mMissedPct').textContent= totals.total > 0 ? ((totals.missed/totals.total)*100).toFixed(1)+'% of total' : '—';
-  document.getElementById('mInbound').textContent  = totals.inbound.toLocaleString();
-  document.getElementById('mInboundPct').textContent = mp(totals.inbound);
-  document.getElementById('mOutbound').textContent = totals.outbound.toLocaleString();
-  document.getElementById('mOutboundPct').textContent = mp(totals.outbound);
+  function buildOpsTotals(week) {
+    const rawRows = globalData.rawCallsRows;
+    if (!rawRows || rawRows.length < 2) return { total:0, inbound:0, outbound:0, missed:0 };
+    const hdrs = rawRows[0].map(h => String(h).trim());
+    const iDir   = hdrs.indexOf('direction');
+    const iStart = hdrs.indexOf('started_at');
+    const iAns   = hdrs.indexOf('answered_at');
+    const iTeam  = hdrs.indexOf('team_name');
+    const iNum   = hdrs.indexOf('number_id');
+    const iUser  = hdrs.indexOf('user_name');
+    const agentTeamMap = globalData.agentTeamMap || {};
+
+    const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
+    const latestWk = Number(allWeeks[allWeeks.length-1]);
+    const selWk = (!week||week==='latest') ? latestWk : Number(week);
+    const jan4 = new Date(Date.UTC(2026,0,4));
+    const jan4Day = (jan4.getUTCDay()+6)%7;
+    const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
+    const weekMon = new Date(week1Mon.getTime()+(selWk-1)*7*86400000);
+    const wkStart = Math.floor(weekMon.getTime()/1000);
+    const wkEnd   = wkStart + 7*86400;
+
+    let inbound=0, outbound=0, missed=0;
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const ts = Number(row[iStart]);
+      if (!ts || ts < wkStart || ts >= wkEnd) continue;
+      const dir  = String(row[iDir]||'').trim();
+      const team = String(row[iTeam]||'').trim();
+      const num  = String(row[iNum]||'').trim();
+      const user = String(row[iUser]||'').trim();
+      const ans  = row[iAns] !== '' && row[iAns] != null;
+      if (dir === 'inbound') {
+        const isOps = DAY_CHART_INBOUND_TEAMS.has(team) || DAY_CHART_INBOUND_NUMS.has(num);
+        if (!isOps) continue;
+        inbound++;
+        if (!ans) missed++;
+      } else if (dir === 'outbound') {
+        const agentTeam = agentTeamMap[user] || '';
+        if (!DAY_CHART_OUTBOUND_AGENTS.has(agentTeam)) continue;
+        outbound++;
+      }
+    }
+    return { total: inbound+outbound, inbound, outbound, missed };
+  }
+
+  function renderOverview(week) {
+    const t = buildOpsTotals(week);
+    const mp = v => t.total > 0 ? ((v/t.total)*100).toFixed(1)+'% of total' : '—';
+    document.getElementById('mTotal').textContent    = t.total.toLocaleString();
+    document.getElementById('mMissed').textContent   = t.missed.toLocaleString();
+    document.getElementById('mMissedPct').textContent= t.total > 0 ? ((t.missed/t.inbound)*100).toFixed(1)+'% of inbound' : '—';
+    document.getElementById('mInbound').textContent  = t.inbound.toLocaleString();
+    document.getElementById('mInboundPct').textContent = mp(t.inbound);
+    document.getElementById('mOutbound').textContent = t.outbound.toLocaleString();
+    document.getElementById('mOutboundPct').textContent = mp(t.outbound);
+  }
+  renderOverview('latest');
+
+  // Overview week filter tabs
+  const overviewWeekTabsEl = document.getElementById('overviewWeekTabs');
+  if (overviewWeekTabsEl) {
+    const ovWeeks = globalData.availableWeeks || [];
+    overviewWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
+      ovWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
+    overviewWeekTabsEl.addEventListener('click', e => {
+      const btn = e.target.closest('.tab'); if (!btn) return;
+      document.querySelectorAll('#overviewWeekTabs .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      renderOverview(btn.dataset.week);
+    });
+  }
 
   // Team cards
   const TC = {support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',keyaccounts:'#be185d',smartbook:'#374151'};
