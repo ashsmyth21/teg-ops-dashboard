@@ -237,6 +237,23 @@ thead th.col-team {
     </div>
     <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
 
+    <div class="section-wrap"><div class="section-label">Outbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of outbound call volume by hour (8am–5pm) and day of week per team." data-update="Live from raw calls">i</button></div>
+    <div id="outHeatWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
+      <div class="tabs" id="outHeatWeekTabs" style="margin-bottom:0">
+        <button class="tab active" data-week="latest">Latest</button>
+      </div>
+    </div>
+    <div class="tabs" id="outHeatTabs">
+      <button class="tab active" data-team="support">Support</button>
+      <button class="tab" data-team="revered">Revered</button>
+      <button class="tab" data-team="onboarding">Onboarding</button>
+      <button class="tab" data-team="risk">Risk</button>
+      <button class="tab" data-team="credit">Credit control</button>
+      <button class="tab" data-team="secondline">2nd line</button>
+    </div>
+    <div class="card" style="margin-bottom:12px"><div id="outHeatmap" class="heat-grid"></div></div>
+
     <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
     <div id="weekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
@@ -1304,6 +1321,35 @@ function renderDashboard() {
     renderHeatmap(currentHeatTeam);
   });
 
+  // Outbound heatmap
+  let currentOutHeatTeam = 'support';
+  let currentOutHeatWeek = 'latest';
+  buildOutboundHeatmapsForWeek(currentOutHeatWeek);
+  renderOutHeatmap(currentOutHeatTeam);
+
+  // Outbound heatmap week tabs
+  const outHeatWeekTabsEl = document.getElementById('outHeatWeekTabs');
+  if (outHeatWeekTabsEl) {
+    outHeatWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
+      (globalData.availableWeeks||[]).map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
+    outHeatWeekTabsEl.addEventListener('click', e => {
+      const btn = e.target.closest('.tab'); if (!btn) return;
+      document.querySelectorAll('#outHeatWeekTabs .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      currentOutHeatWeek = btn.dataset.week;
+      buildOutboundHeatmapsForWeek(currentOutHeatWeek);
+      renderOutHeatmap(currentOutHeatTeam);
+    });
+  }
+
+  document.getElementById('outHeatTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    document.querySelectorAll('#outHeatTabs .tab').forEach(t=>t.classList.remove('active'));
+    btn.classList.add('active');
+    currentOutHeatTeam = btn.dataset.team;
+    renderOutHeatmap(currentOutHeatTeam);
+  });
+
   document.getElementById('agentTabs').addEventListener('click', e => {
     const btn = e.target.closest('.tab'); if (!btn) return;
     document.querySelectorAll('#agentTabs .tab').forEach(t=>t.classList.remove('active'));
@@ -1455,6 +1501,113 @@ function buildHeatmapsForWeek(week) {
       });
     });
     globalData.heatmaps[key] = hm;
+  });
+}
+
+function buildOutboundHeatmapsForWeek(week) {
+  const rawCallsRows = globalData.rawCallsRows;
+  if (!rawCallsRows || rawCallsRows.length < 2) return;
+
+  const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+  const latestWeek = Number(allWeeks[allWeeks.length - 1]);
+  const selectedWeek = (!week || week === 'latest') ? latestWeek : Number(week);
+
+  const jan4 = new Date(Date.UTC(2026, 0, 4));
+  const jan4Day = (jan4.getUTCDay() + 6) % 7;
+  const week1Mon = new Date(jan4.getTime() - jan4Day * 86400000);
+  const weekMon = new Date(week1Mon.getTime() + (selectedWeek - 1) * 7 * 86400000);
+  const weekStartSec = Math.floor(weekMon.getTime() / 1000);
+  const weekEndSec   = weekStartSec + 7 * 86400;
+
+  const HOURS = [8,9,10,11,12,13,14,15,16,17];
+  const DAYS  = ['Mon','Tue','Wed','Thu','Fri'];
+  const agentTeamMap = globalData.agentTeamMap || {};
+
+  const hdrs = rawCallsRows[0].map(h => String(h).trim());
+  const iStart = hdrs.indexOf('started_at');
+  const iDir   = hdrs.indexOf('direction');
+  const iUser  = hdrs.indexOf('user_name');
+  const iNum   = hdrs.indexOf('number_id');
+
+  const OUT_TEAMS = {
+    'support':    ['Support + Revered'],
+    'revered':    ['Support + Revered'],
+    'onboarding': ['Onboarding'],
+    'risk':       ['Risk and compliance'],
+    'credit':     ['Credit Control'],
+    'secondline': ['2nd line (Tech support team)'],
+  };
+
+  globalData.outHeatmaps = {};
+
+  Object.entries(OUT_TEAMS).forEach(([key, labels]) => {
+    const heat = HOURS.map(() => new Array(5).fill(0));
+
+    for (let i = 1; i < rawCallsRows.length; i++) {
+      const row = rawCallsRows[i];
+      const started = Number(row[iStart]);
+      if (!started || started < weekStartSec || started >= weekEndSec) continue;
+      const direction = String(row[iDir]||'').trim();
+      if (direction !== 'outbound') continue;
+
+      const user = String(row[iUser]||'').trim();
+      const agentTeam = agentTeamMap[user] || '';
+      if (!labels.includes(agentTeam)) continue;
+
+      const d = new Date(started * 1000);
+      const localHour = (d.getUTCHours() + 1) % 24;
+      const utcDay = d.getUTCDay();
+      let adjustedDay = utcDay;
+      if (d.getUTCHours() === 23) adjustedDay = (utcDay + 1) % 7;
+      const dayIdx = (adjustedDay + 6) % 7;
+      if (dayIdx > 4) continue;
+      const hourIdx = HOURS.indexOf(localHour);
+      if (hourIdx < 0) continue;
+
+      heat[hourIdx][dayIdx]++;
+    }
+
+    const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
+    HOURS.forEach((hr, hi) => {
+      DAYS.forEach((day, di) => {
+        hm[day].push({ hr, v: heat[hi][di], va: null });
+      });
+    });
+    globalData.outHeatmaps[key] = hm;
+  });
+}
+
+function renderOutHeatmap(team) {
+  const td = globalData.outHeatmaps ? globalData.outHeatmaps[team] : null;
+  if (!td) return;
+  const wkdays = ['Mon','Tue','Wed','Thu','Fri'];
+  const hours  = [8,9,10,11,12,13,14,15,16,17];
+  const hourLabels = ['8am','9am','10am','11am','12pm','1pm','2pm','3pm','4pm','5pm'];
+  let max = 0;
+  wkdays.forEach(d => (td[d]||[]).forEach(p => { if(p.v>max) max=p.v; }));
+  const grid = document.getElementById('outHeatmap');
+  grid.innerHTML = '';
+  grid.style.gridTemplateColumns = '44px repeat(5,1fr)';
+  const h0 = document.createElement('div'); h0.className='heat-head'; grid.appendChild(h0);
+  wkdays.forEach(d => {
+    const h = document.createElement('div'); h.className='heat-head'; h.textContent=d; grid.appendChild(h);
+  });
+  hours.forEach((hr,i) => {
+    const lbl = document.createElement('div'); lbl.className='heat-cell';
+    lbl.innerHTML = `<div class="heat-cell-single" style="color:var(--muted)">${hourLabels[i]}</div>`;
+    grid.appendChild(lbl);
+    wkdays.forEach(day => {
+      const pts = td[day]||[]; let pt = null;
+      for(let k=0;k<pts.length;k++){if(pts[k].hr===hr){pt=pts[k];break;}}
+      if(!pt) pt={v:0,va:null};
+      const pct = max>0?pt.v/max:0;
+      const bg = `rgba(21,128,61,${0.08+pct*0.85})`;
+      const fg = pct>0.5?'#fff':'var(--muted)';
+      const cell = document.createElement('div'); cell.className='heat-cell';
+      cell.style.background = bg; cell.style.color = fg;
+      cell.innerHTML = `<div class="heat-cell-single">${pt.v>0?pt.v:''}</div>`;
+      grid.appendChild(cell);
+    });
   });
 }
 
