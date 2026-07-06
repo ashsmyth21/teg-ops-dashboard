@@ -173,11 +173,17 @@ thead th.col-team {
       <div class="metric-card"><div class="lbl">Outbound</div><div class="val" id="mOutbound">—</div><div class="sub" id="mOutboundPct">—</div></div>
     </div>
 
+    <div id="dayWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
+      <div class="tabs" id="dayWeekTabs" style="margin-bottom:0">
+        <button class="tab active" data-week="latest">Latest</button>
+      </div>
+    </div>
+    <div class="section-wrap" style="margin-top:0"><div class="section-label">Call volume by day</div><button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day of the week." data-update="Updated every Monday at 6am">i</button></div>
+    <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
+
     <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="Updated every Monday at 6am">i</button></div>
     <div id="teamGrid" class="team-grid"></div>
-
-    <div class="section-wrap"><div class="section-label">Call volume by day</div><button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day of the week." data-update="Updated every Monday at 6am">i</button></div>
-    <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
 
     <div class="two-col">
       <div class="card">
@@ -708,7 +714,7 @@ async function loadDashboard() {
     }
     const outboundSummary = buildOutboundSummary('latest');
 
-    globalData = { totals, dayOrder, dayData, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap, teamDefs, buildTeamSummary, buildOutboundSummary, outboundSummary, supportOut, reveredOut, onboardOut: onboardOut, riskOut, creditOut };
+    globalData = { totals, dayOrder, dayData, companyRows, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap, teamDefs, buildTeamSummary, buildOutboundSummary, outboundSummary, supportOut, reveredOut, onboardOut: onboardOut, riskOut, creditOut };
 
     // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
     // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
@@ -847,17 +853,59 @@ function renderDashboard() {
   if (charts.answer) charts.answer.destroy();
   if (charts.outbound) charts.outbound.destroy();
 
-  charts.day = new Chart(document.getElementById('dayChart'), {
-    type:'bar', data:{
+  function buildDayChartData(dd) {
+    return {
       labels: dayOrder.map(d=>d.slice(0,3)),
       datasets:[
-        {label:'Inbound', data:dayOrder.map(d=>dayData.inbound[d]||0), backgroundColor:'#3b82f6'},
-        {label:'Outbound',data:dayOrder.map(d=>dayData.outbound[d]||0),backgroundColor:'#15803d'},
-        {label:'Missed',  data:dayOrder.map(d=>dayData.missed[d]||0),  backgroundColor:'#dc2626'},
+        {label:'Inbound', data:dayOrder.map(d=>dd.inbound[d]||0), backgroundColor:'#3b82f6'},
+        {label:'Outbound',data:dayOrder.map(d=>dd.outbound[d]||0),backgroundColor:'#15803d'},
+        {label:'Missed',  data:dayOrder.map(d=>dd.missed[d]||0),  backgroundColor:'#dc2626'},
       ]
-    },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(0,0,0,.05)'}}}}
+    };
+  }
+  charts.day = new Chart(document.getElementById('dayChart'), {
+    type:'bar',
+    data: buildDayChartData(dayData),
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        datalabels: false,
+      },
+      scales:{
+        x:{grid:{display:false}},
+        y:{grid:{color:'rgba(0,0,0,.05)'}}
+      }
+    }
   });
+
+  // Day chart week filter tabs
+  const dayWeekTabsEl = document.getElementById('dayWeekTabs');
+  if (dayWeekTabsEl) {
+    const dayWeeks = globalData.availableWeeks || [];
+    dayWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
+      dayWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
+    dayWeekTabsEl.addEventListener('click', e => {
+      const btn = e.target.closest('.tab'); if (!btn) return;
+      document.querySelectorAll('#dayWeekTabs .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      const selWeek = btn.dataset.week;
+      const allWeeks = [...new Set((globalData.companyRows||[]).map(r => r['week of the year']||r['Week of the year']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
+      const latestWk = allWeeks[allWeeks.length-1];
+      const selWk = (!selWeek || selWeek==='latest') ? latestWk : Number(selWeek);
+      const newDayData = { inbound:{}, outbound:{}, missed:{}, total:{} };
+      (globalData.companyRows||[]).forEach(r => {
+        const wk = r['week of the year'] || r['Week of the year'];
+        if (Number(wk) !== Number(selWk)) return;
+        const day = r['Created Day of Week']; if (!day) return;
+        newDayData.inbound[day]  = Number(r['Inbound Calls'])  || 0;
+        newDayData.outbound[day] = Number(r['Outbound Calls']) || 0;
+        newDayData.missed[day]   = Number(r['Missed Calls'])   || 0;
+      });
+      charts.day.data = buildDayChartData(newDayData);
+      charts.day.update();
+    });
+  }
 
   charts.answer = new Chart(document.getElementById('answerChart'), {
     type:'bar', data:{
