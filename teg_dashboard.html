@@ -923,13 +923,7 @@ function renderDashboard() {
   if (charts.answer) charts.answer.destroy();
   if (charts.outbound) charts.outbound.destroy();
 
-  // Ops teams for day chart filtering
-  const DAY_CHART_INBOUND_TEAMS = new Set([
-    'Support','Support Revered','Onboarding','Onboarding stage 1 calls',
-    'Risk and compliance','Support - Credit Control','2nd line (Tech support team)'
-  ]);
-  const DAY_CHART_INBOUND_NUMS = new Set(['286844','286845','286847','286848','192211','201178','1216204','326618']);
-  const DAY_CHART_OUTBOUND_AGENTS = new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']);
+
 
   function buildDayDataFromRaw(week) {
     const rawRows = globalData.rawCallsRows;
@@ -1259,6 +1253,14 @@ function fmtTalkTime(raw) {
   }
   return '—';
 }
+
+// Ops team filters for charts
+const DAY_CHART_INBOUND_TEAMS = new Set([
+  'Support','Support Revered','Onboarding','Onboarding stage 1 calls',
+  'Risk and compliance','Support - Credit Control','2nd line (Tech support team)'
+]);
+const DAY_CHART_INBOUND_NUMS = new Set(['286844','286845','286847','286848','192211','201178','1216204','326618']);
+const DAY_CHART_OUTBOUND_AGENTS = new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']);
 
 // Parse raw outbound sheet (2D array) into week summary rows
 function parseOutboundRaw(rawRows) {
