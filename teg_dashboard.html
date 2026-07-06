@@ -245,8 +245,7 @@ thead th.col-team {
       </div>
     </div>
     <div class="tabs" id="outHeatTabs">
-      <button class="tab active" data-team="support">Support</button>
-      <button class="tab" data-team="revered">Revered</button>
+      <button class="tab active" data-team="supportrev">Support + Revered</button>
       <button class="tab" data-team="onboarding">Onboarding</button>
       <button class="tab" data-team="risk">Risk</button>
       <button class="tab" data-team="credit">Credit control</button>
@@ -1322,7 +1321,7 @@ function renderDashboard() {
   });
 
   // Outbound heatmap
-  let currentOutHeatTeam = 'support';
+  let currentOutHeatTeam = 'supportrev';
   let currentOutHeatWeek = 'latest';
   buildOutboundHeatmapsForWeek(currentOutHeatWeek);
   renderOutHeatmap(currentOutHeatTeam);
@@ -1530,8 +1529,7 @@ function buildOutboundHeatmapsForWeek(week) {
   const iNum   = hdrs.indexOf('number_id');
 
   const OUT_TEAMS = {
-    'support':    ['Support + Revered'],
-    'revered':    ['Support + Revered'],
+    'supportrev': ['Support + Revered'],
     'onboarding': ['Onboarding'],
     'risk':       ['Risk and compliance'],
     'credit':     ['Credit Control'],
