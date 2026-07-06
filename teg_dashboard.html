@@ -508,7 +508,6 @@ async function loadDashboard() {
            cbRows, teamRows,
            supportIn, supportOut, reveredIn, reveredOut,
            onboardIn, onboardOut, riskIn, riskOut, creditIn, creditOut, keyIn, keyOut, smartIn, smartOut,
-           secondLineIn, secondLineOut,
            rawCallsRows] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
@@ -531,8 +530,6 @@ async function loadDashboard() {
       readSheet('Key accounts outbound'),
       readSheet('Smartbook inbound'),
       readSheet('Smartbook outbound'),
-      readSheet('2nd line data inbound'),
-      readSheetRaw('2nd line data outbound'),
       readSheetRaw('raw_calls'),
     ]);
 
@@ -561,7 +558,7 @@ async function loadDashboard() {
       { key:'onboarding',  label:'Onboarding',  inR:onboardIn,     outR:onboardOut    },
       { key:'risk',        label:'Risk',        inR:riskIn,        outR:riskOut       },
       { key:'credit',      label:'Credit ctrl', inR:creditIn,      outR:creditOut     },
-      { key:'secondline',  label:'2nd line',    inR:secondLineIn,  outR:[]            },
+      { key:'secondline',  label:'2nd line',    inR:[],            outR:[]            },
     ];
     // Outbound chart uses merged Support+Revered and agent-based attribution
     const outboundTeamDefs = [
