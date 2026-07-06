@@ -670,6 +670,41 @@ async function loadDashboard() {
       if (name) _aiMap[name] = String(r['Summary']||'');
     });
 
+    // ---- Talk time from raw_calls ----
+    const _talkTimeMap = {};
+    if (rawCallsRows && rawCallsRows.length > 1) {
+      const rHdrs = rawCallsRows[0].map(h => String(h).trim());
+      const rDir   = rHdrs.indexOf('direction');
+      const rStart = rHdrs.indexOf('started_at');
+      const rAns   = rHdrs.indexOf('answered_at');
+      const rEnd   = rHdrs.indexOf('ended_at');
+      const rUser  = rHdrs.indexOf('user_name');
+      const allWks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
+      const latestWk2 = Number(allWks[allWks.length-1]);
+      const selWk2 = (currentWeek === 'latest' || !currentWeek) ? latestWk2 : Number(currentWeek);
+      const jan4b = new Date(Date.UTC(2026,0,4));
+      const jan4Dayb = (jan4b.getUTCDay()+6)%7;
+      const week1Monb = new Date(jan4b.getTime()-jan4Dayb*86400000);
+      const weekMonb = new Date(week1Monb.getTime()+(selWk2-1)*7*86400000);
+      const wkStartb = Math.floor(weekMonb.getTime()/1000);
+      const wkEndb   = wkStartb + 7*86400;
+      for (let i = 1; i < rawCallsRows.length; i++) {
+        const row = rawCallsRows[i];
+        const ts = Number(row[rStart]);
+        if (!ts || ts < wkStartb || ts >= wkEndb) continue;
+        const ans = row[rAns]; const end = row[rEnd];
+        if (!ans || !end || ans === '' || end === '') continue;
+        const talkSecs = Number(end) - Number(ans);
+        if (talkSecs <= 0) continue;
+        const user = String(row[rUser]||'').trim();
+        const dir  = String(row[rDir]||'').trim();
+        if (!user) continue;
+        if (!_talkTimeMap[user]) _talkTimeMap[user] = { inbound: 0, outbound: 0 };
+        if (dir === 'inbound')  _talkTimeMap[user].inbound  += talkSecs;
+        if (dir === 'outbound') _talkTimeMap[user].outbound += talkSecs;
+      }
+    }
+
     // ---- Agent stats aggregation ----
     const agentAgg = {};
     // Determine which week to use
@@ -714,11 +749,13 @@ async function loadDashboard() {
       const activeSecs = gs('available') + gs('in_call') + gs('after_call_work') + gs('doing_back_office') + gs('in_training') + gs('do_not_disturb');
       const partWeek  = false;
       const team = agentTeam[name] || '—';
+      const _tt = _talkTimeMap[name] || { inbound: 0, outbound: 0 };
       return { name, team, excess_acw:excessAcw, available:gs('available'), in_call:gs('in_call'),
                after_call_work:gs('after_call_work'), allowed_acw:allowedAcw, investigation,
                doing_back_office:gs('doing_back_office'), in_training:gs('in_training'),
                out_for_lunch:gs('out_for_lunch'), on_a_break:gs('on_a_break'),
-               inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai };
+               inbound_calls:inb, outbound_calls:out, callUtil, zdUtil, partWeek, cv, zd, ai,
+               talk_inbound: _tt.inbound, talk_outbound: _tt.outbound };
     }).sort((a,b) => (b.callUtil+b.zdUtil) - (a.callUtil+a.zdUtil));
 
     const weekNum = agentStatsRows.length > 0 ? (agentStatsRows[0]['Week'] || '—') : '—';
