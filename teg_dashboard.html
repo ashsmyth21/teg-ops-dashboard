@@ -853,6 +853,67 @@ function renderDashboard() {
   if (charts.answer) charts.answer.destroy();
   if (charts.outbound) charts.outbound.destroy();
 
+  // Ops teams for day chart filtering
+  const DAY_CHART_INBOUND_TEAMS = new Set([
+    'Support','Support Revered','Onboarding','Onboarding stage 1 calls',
+    'Risk and compliance','Support - Credit Control','2nd line (Tech support team)'
+  ]);
+  const DAY_CHART_INBOUND_NUMS = new Set(['286844','286845','286847','286848','192211','201178','1216204','326618']);
+  const DAY_CHART_OUTBOUND_AGENTS = new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']);
+
+  function buildDayDataFromRaw(week) {
+    const rawRows = globalData.rawCallsRows;
+    if (!rawRows || rawRows.length < 2) return globalData.dayData;
+    const hdrs = rawRows[0].map(h => String(h).trim());
+    const iDir   = hdrs.indexOf('direction');
+    const iStart = hdrs.indexOf('started_at');
+    const iAns   = hdrs.indexOf('answered_at');
+    const iTeam  = hdrs.indexOf('team_name');
+    const iNum   = hdrs.indexOf('number_id');
+    const iUser  = hdrs.indexOf('user_name');
+    const agentTeamMap = globalData.agentTeamMap || {};
+
+    // Get week date range
+    const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
+    const latestWk = Number(allWeeks[allWeeks.length-1]);
+    const selWk = (!week||week==='latest') ? latestWk : Number(week);
+    const jan4 = new Date(Date.UTC(2026,0,4));
+    const jan4Day = (jan4.getUTCDay()+6)%7;
+    const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
+    const weekMon = new Date(week1Mon.getTime()+(selWk-1)*7*86400000);
+    const wkStart = Math.floor(weekMon.getTime()/1000);
+    const wkEnd   = wkStart + 7*86400;
+
+    const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const dd = { inbound:{}, outbound:{}, missed:{} };
+    DAYS.forEach(d => { dd.inbound[d]=0; dd.outbound[d]=0; dd.missed[d]=0; });
+
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const ts = Number(row[iStart]);
+      if (!ts || ts < wkStart || ts >= wkEnd) continue;
+      const dir    = String(row[iDir]||'').trim();
+      const team   = String(row[iTeam]||'').trim();
+      const num    = String(row[iNum]||'').trim();
+      const user   = String(row[iUser]||'').trim();
+      const ans    = row[iAns] !== '' && row[iAns] != null;
+      const dayIdx = (new Date(ts*1000).getUTCDay()+6)%7;
+      const dayName = DAYS[dayIdx];
+
+      if (dir === 'inbound') {
+        const isOps = DAY_CHART_INBOUND_TEAMS.has(team) || DAY_CHART_INBOUND_NUMS.has(num);
+        if (!isOps) continue;
+        dd.inbound[dayName]++;
+        if (!ans) dd.missed[dayName]++;
+      } else if (dir === 'outbound') {
+        const agentTeam = agentTeamMap[user] || '';
+        if (!DAY_CHART_OUTBOUND_AGENTS.has(agentTeam)) continue;
+        dd.outbound[dayName]++;
+      }
+    }
+    return dd;
+  }
+
   function buildDayChartData(dd) {
     return {
       labels: dayOrder.map(d=>d.slice(0,3)),
@@ -863,9 +924,10 @@ function renderDashboard() {
       ]
     };
   }
+  const initialDayData = buildDayDataFromRaw('latest');
   charts.day = new Chart(document.getElementById('dayChart'), {
     type:'bar',
-    data: buildDayChartData(dayData),
+    data: buildDayChartData(initialDayData),
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
@@ -893,15 +955,7 @@ function renderDashboard() {
       const allWeeks = [...new Set((globalData.companyRows||[]).map(r => r['week of the year']||r['Week of the year']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
       const latestWk = allWeeks[allWeeks.length-1];
       const selWk = (!selWeek || selWeek==='latest') ? latestWk : Number(selWeek);
-      const newDayData = { inbound:{}, outbound:{}, missed:{}, total:{} };
-      (globalData.companyRows||[]).forEach(r => {
-        const wk = r['week of the year'] || r['Week of the year'];
-        if (Number(wk) !== Number(selWk)) return;
-        const day = r['Created Day of Week']; if (!day) return;
-        newDayData.inbound[day]  = Number(r['Inbound Calls'])  || 0;
-        newDayData.outbound[day] = Number(r['Outbound Calls']) || 0;
-        newDayData.missed[day]   = Number(r['Missed Calls'])   || 0;
-      });
+      const newDayData = buildDayDataFromRaw(selWeek);
       charts.day.data = buildDayChartData(newDayData);
       charts.day.update();
     });
