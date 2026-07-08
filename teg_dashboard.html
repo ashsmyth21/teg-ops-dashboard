@@ -1859,9 +1859,12 @@ function buildAgentsForWeek(week) {
     }
   }
 
-  // Zendesk for selected week
-  const zdMap = {};
-  zdRows.filter(r => Number(r['Week']) === selectedWeek).forEach(r => {
+ // Zendesk — use latest ZD week independently of agent stats week
+const allZdWeeks = [...new Set(zdRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+const latestZdWeek = Number(allZdWeeks[allZdWeeks.length - 1]);
+const selectedZdWeek = (week === 'latest' || !week) ? latestZdWeek : Number(week);
+const zdMap = {};
+zdRows.filter(r => Number(r['Week']) === selectedZdWeek).forEach(r => {
     const name = String(r['Agent name']||'').trim();
     if (!name) return;
     if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
