@@ -183,6 +183,15 @@ thead th.col-team {
       </div>
     </div>
     <div class="section-wrap" style="margin-top:0"><div class="section-label">Call volume by day</div><button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day of the week." data-update="Updated every Monday at 6am">i</button></div>
+    <div class="tabs" id="dayTeamTabs">
+      <button class="tab active" data-team="all">All teams</button>
+      <button class="tab" data-team="support">Support</button>
+      <button class="tab" data-team="revered">Revered</button>
+      <button class="tab" data-team="onboarding">Onboarding</button>
+      <button class="tab" data-team="risk">Risk</button>
+      <button class="tab" data-team="credit">Credit control</button>
+      <button class="tab" data-team="secondline">2nd line</button>
+    </div>
     <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
 
     <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="Updated every Monday at 6am">i</button></div>
@@ -1076,7 +1085,27 @@ function renderDashboard() {
   if (charts.answer) charts.answer.destroy();
   if (charts.outbound) charts.outbound.destroy();
 
-  function buildDayDataFromRaw(week) {
+  const DAY_TEAM_INBOUND = {
+    'all':        { teams: DAY_CHART_INBOUND_TEAMS, nums: DAY_CHART_INBOUND_NUMS },
+    'support':    { teams: new Set(['Support']), nums: new Set(['286844','286845','286847','286848','192211']) },
+    'revered':    { teams: new Set(['Support Revered']), nums: new Set([]) },
+    'onboarding': { teams: new Set(['Onboarding','Onboarding stage 1 calls']), nums: new Set(['201178']) },
+    'risk':       { teams: new Set(['Risk and compliance']), nums: new Set(['1216204']) },
+    'credit':     { teams: new Set(['Credit Control','Support - Credit Control']), nums: new Set([]) },
+    'secondline': { teams: new Set(['2nd line (Tech support team)']), nums: new Set(['326618']) },
+  };
+  const DAY_TEAM_OUTBOUND = {
+    'all':        new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']),
+    'support':    new Set(['Support + Revered']),
+    'revered':    new Set(['Support + Revered']),
+    'onboarding': new Set(['Onboarding']),
+    'risk':       new Set(['Risk and compliance']),
+    'credit':     new Set(['Credit Control']),
+    'secondline': new Set(['2nd line (Tech support team)']),
+  };
+  let currentDayTeam = 'all';
+
+  function buildDayDataFromRaw(week, teamFilter) {
     const rawRows = globalData.rawCallsRows;
     if (!rawRows || rawRows.length < 2) return globalData.dayData;
     const hdrs = rawRows[0].map(h => String(h).trim());
@@ -1087,8 +1116,10 @@ function renderDashboard() {
     const iNum   = hdrs.indexOf('number_id');
     const iUser  = hdrs.indexOf('user_name');
     const agentTeamMap = globalData.agentTeamMap || {};
+    const tf = teamFilter || 'all';
+    const inF = DAY_TEAM_INBOUND[tf] || DAY_TEAM_INBOUND['all'];
+    const outF = DAY_TEAM_OUTBOUND[tf] || DAY_TEAM_OUTBOUND['all'];
 
-    const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
     const selWk = (!week||week==='latest') ? getCurrentISOWeek() : Number(week);
     const jan4 = new Date(Date.UTC(2026,0,4));
     const jan4Day = (jan4.getUTCDay()+6)%7;
@@ -1114,13 +1145,12 @@ function renderDashboard() {
       const dayName = DAYS[dayIdx];
 
       if (dir === 'inbound') {
-        const isOps = DAY_CHART_INBOUND_TEAMS.has(team) || DAY_CHART_INBOUND_NUMS.has(num);
-        if (!isOps) continue;
+        if (!inF.teams.has(team) && !inF.nums.has(num)) continue;
         dd.inbound[dayName]++;
         if (!ans) dd.missed[dayName]++;
       } else if (dir === 'outbound') {
         const agentTeam = agentTeamMap[user] || '';
-        if (!DAY_CHART_OUTBOUND_AGENTS.has(agentTeam)) continue;
+        if (!outF.has(agentTeam)) continue;
         dd.outbound[dayName]++;
       }
     }
@@ -1137,7 +1167,7 @@ function renderDashboard() {
       ]
     };
   }
-  const initialDayData = buildDayDataFromRaw('latest');
+  const initialDayData = buildDayDataFromRaw('latest', 'all');
   charts.day = new Chart(document.getElementById('dayChart'), {
     type:'bar',
     data: buildDayChartData(initialDayData),
@@ -1157,7 +1187,22 @@ function renderDashboard() {
       const btn = e.target.closest('.tab'); if (!btn) return;
       document.querySelectorAll('#dayWeekTabs .tab').forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
-      const newDayData = buildDayDataFromRaw(btn.dataset.week);
+      const newDayData = buildDayDataFromRaw(btn.dataset.week, currentDayTeam);
+      charts.day.data = buildDayChartData(newDayData);
+      charts.day.update();
+    });
+  }
+
+  const dayTeamTabsEl = document.getElementById('dayTeamTabs');
+  if (dayTeamTabsEl) {
+    dayTeamTabsEl.addEventListener('click', e => {
+      const btn = e.target.closest('.tab'); if (!btn) return;
+      document.querySelectorAll('#dayTeamTabs .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      currentDayTeam = btn.dataset.team;
+      const activeWeekBtn = document.querySelector('#dayWeekTabs .tab.active');
+      const selWeek = activeWeekBtn ? activeWeekBtn.dataset.week : 'latest';
+      const newDayData = buildDayDataFromRaw(selWeek, currentDayTeam);
       charts.day.data = buildDayChartData(newDayData);
       charts.day.update();
     });
