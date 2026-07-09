@@ -1748,7 +1748,15 @@ function buildAgentsForWeek(week) {
     if (name && t) agentTeamMap[name] = t;
   });
 
-  return Object.entries(agentAgg).map(([name, s]) => {
+  // When 'latest' falls back to prior week's agent stats, only show agents
+  // who have actual activity in the current data week (calls or Zendesk)
+  const activeThisWeek = isLatest && !agentStatsHasCurrentWeek
+    ? new Set([...Object.keys(rawCallCounts), ...Object.keys(zdMap)])
+    : null;
+
+  return Object.entries(agentAgg)
+  .filter(([name]) => !activeThisWeek || activeThisWeek.has(name))
+  .map(([name, s]) => {
     const cv = cvMap[name] || null;
     const zd = zdMap[name] || null;
     const ai = globalData.aiMap ? (globalData.aiMap[name] || null) : null;
