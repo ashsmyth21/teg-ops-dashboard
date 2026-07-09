@@ -106,7 +106,7 @@ td.l{text-align:left}
 tr.has-summary{cursor:pointer}
 tr.has-summary:hover td{background:#f8faff}
 
-/* ── Sticky Agent + Team columns ── */
+/* Sticky Agent + Team columns */
 thead th{position:sticky;top:0;z-index:3;background:var(--surface)}
 th.col-agent,
 td.col-agent {
@@ -127,18 +127,15 @@ td.col-team {
   z-index: 2;
   border-right: 2px solid var(--border);
 }
-/* Ensure sticky headers sit above sticky cells */
 thead th.col-agent,
 thead th.col-team {
   z-index: 3;
 }
 
-/* Hide Team column when a team filter is active */
 .hide-team th.col-team,
 .hide-team td.col-team {
   display: none;
 }
-/* When team col hidden, shift agent sticky left to 0 (it already is) */
 .hide-team th.col-agent,
 .hide-team td.col-agent {
   left: 0;
@@ -448,6 +445,20 @@ async function readSheetRaw(sheetName) {
 }
 
 // ============================================================
+// ISO WEEK HELPER
+// ============================================================
+function getCurrentISOWeek() {
+  const date = new Date();
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - dayNum + 3);
+  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const firstDayNum = (firstThu.getUTCDay() + 6) % 7;
+  firstThu.setUTCDate(firstThu.getUTCDate() - firstDayNum + 3);
+  return 1 + Math.round((d.getTime() - firstThu.getTime()) / (7 * 24 * 3600 * 1000));
+}
+
+// ============================================================
 // DATA PROCESSING
 // ============================================================
 function fmtHrs(sec) {
@@ -462,11 +473,9 @@ function fmtHrs(sec) {
 
 function parseTimeSec(t) {
   if (!t) return 0;
-  // HH:MM:SS string format
   const s = String(t);
   const parts = s.split(':');
   if (parts.length === 3) return (+parts[0])*3600 + (+parts[1])*60 + (+parts[2]);
-  // Decimal fraction of a day (Excel serial time) e.g. 1.047 = 1.047 days = ~25h
   const num = parseFloat(t);
   if (!isNaN(num) && num > 0) return Math.round(num * 86400);
   return 0;
@@ -555,7 +564,6 @@ async function loadDashboard() {
       dayData.inbound[day]  = Number(r['Inbound Calls'])  || 0;
       dayData.outbound[day] = Number(r['Outbound Calls']) || 0;
       dayData.missed[day]   = Number(r['Missed Calls'])   || 0;
-      // Calculate total from components — formula column unreliable
       dayData.total[day]    = (Number(r['Inbound Calls']) || 0) + (Number(r['Outbound Calls']) || 0);
     });
     const totals = {
@@ -574,20 +582,11 @@ async function loadDashboard() {
       { key:'credit',      label:'Credit ctrl', inR:creditIn,      outR:creditOut     },
       { key:'secondline',  label:'2nd line',    inR:[],            outR:[]            },
     ];
-    // Outbound chart uses merged Support+Revered and agent-based attribution
-    const outboundTeamDefs = [
-      { key:'supportrev',  label:'Support + Revered', outR:[...supportOut, ...reveredOut] },
-      { key:'onboarding',  label:'Onboarding',        outR:onboardOut },
-      { key:'risk',        label:'Risk',              outR:riskOut },
-      { key:'credit',      label:'Credit ctrl',       outR:creditOut },
-    ];
-    // Build teamSummary for selected week
     function buildTeamSummary(week) {
       const allInWeeks = [...new Set(supportIn.map(r => r['Week of the year']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
       const latestInWeek = Number(allInWeeks[allInWeeks.length - 1]);
       const selectedInWeek = (!week || week === 'latest') ? latestInWeek : Number(week);
 
-      // Build cvRows lookup for agent-based outbound (2nd line)
       const allCvWeeks = [...new Set(cvRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
       const latestCvWeek = Number(allCvWeeks[allCvWeeks.length-1]);
       const selCvWeek = (!week || week === 'latest') ? latestCvWeek : Number(week);
@@ -601,10 +600,8 @@ async function loadDashboard() {
         let connOut  = Number(outF['Outbound calls (connected calls > x sec)']) || 0;
         let outTalkTime = String(outF['Outbound in-call time (connected calls > x sec)'] || '');
 
-        // 2nd line — use agent-based outbound from cvRows
         if (def.key === 'secondline') {
           outbound = 0; connOut = 0;
-          // Use teamRows directly — avoids agentTeam forward reference
           const secondLineAgents = new Set(
             teamRows.filter(r => String(r['team']||'').trim() === '2nd line (Tech support team)')
                     .map(r => String(r['agent_name']||'').trim())
@@ -651,10 +648,9 @@ async function loadDashboard() {
 
     // ---- Zendesk map ----
     const zdMap = {};
-    const allZdWeeks = [...new Set(zdRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
-    const latestZdWeek = allZdWeeks[allZdWeeks.length - 1];
-    const selectedZdWeek = (currentWeek === 'latest' || !currentWeek) ? latestZdWeek : Number(currentWeek);
-    zdRows.filter(r => Number(r['Week']) === selectedZdWeek).forEach(r => {
+    const currentIsoWk = getCurrentISOWeek();
+    const selectedZdWk = currentIsoWk;
+    zdRows.filter(r => Number(r['Week']) === selectedZdWk).forEach(r => {
       const name = String(r['Agent name']||'').trim();
       if (!name) return;
       if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
@@ -681,7 +677,7 @@ async function loadDashboard() {
       const rcSt   = rcHdrs.indexOf('started_at');
       const allWks3 = [...new Set(agentStatsRows.map(r => r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
       const latestWk3 = Number(allWks3[allWks3.length-1]);
-      const selWk3 = (currentWeek === 'latest' || !currentWeek) ? latestWk3 : Number(currentWeek);
+      const selWk3 = currentIsoWk;
       const jan4c = new Date(Date.UTC(2026,0,4));
       const jan4Dayc = (jan4c.getUTCDay()+6)%7;
       const week1Monc = new Date(jan4c.getTime()-jan4Dayc*86400000);
@@ -715,9 +711,7 @@ async function loadDashboard() {
       const rAns   = rHdrs.indexOf('answered_at');
       const rEnd   = rHdrs.indexOf('ended_at');
       const rUser  = rHdrs.indexOf('user_name');
-      const allWks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-      const latestWk2 = Number(allWks[allWks.length-1]);
-      const selWk2 = (currentWeek === 'latest' || !currentWeek) ? latestWk2 : Number(currentWeek);
+      const selWk2 = currentIsoWk;
       const jan4b = new Date(Date.UTC(2026,0,4));
       const jan4Dayb = (jan4b.getUTCDay()+6)%7;
       const week1Monb = new Date(jan4b.getTime()-jan4Dayb*86400000);
@@ -743,7 +737,6 @@ async function loadDashboard() {
 
     // ---- Agent stats aggregation ----
     const agentAgg = {};
-    // Determine which week to use
     const allWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
     const latestWeek = allWeeks[allWeeks.length - 1];
     const selectedWeek = (currentWeek === 'latest' || !currentWeek) ? latestWeek : Number(currentWeek);
@@ -784,7 +777,6 @@ async function loadDashboard() {
       const zdProd    = comments * COMMENT_TIME;
       const callUtil  = Math.min(Math.round(callProd / CONTRACTED_SECS * 100), 100);
       const zdUtil    = Math.min(Math.round(zdProd   / CONTRACTED_SECS * 100), 100);
-      const activeSecs = gs('available') + gs('in_call') + gs('after_call_work') + gs('doing_back_office') + gs('in_training') + gs('do_not_disturb');
       const partWeek  = false;
       const team = agentTeam[name] || '—';
       const _tt = _talkTimeMap[name] || { inbound: 0, outbound: 0 };
@@ -798,7 +790,6 @@ async function loadDashboard() {
 
     const weekNum = agentStatsRows.length > 0 ? (agentStatsRows[0]['Week'] || '—') : '—';
 
-    // Build Support + Revered sub-team summary
     const extractTeamSummary = (inR, outR) => {
       const inF  = inR[0]  || {};
       const outF = outR[0] || {};
@@ -815,14 +806,13 @@ async function loadDashboard() {
       revered: extractTeamSummary(reveredIn, reveredOut),
     };
 
-    // Store agent team map and ai map for use in renderAgents
     const agentTeamMap = {};
     teamRows.forEach(r => {
       const name = String(r['agent_name']||'').trim();
       const t = String(r['team']||'').trim();
       if (name && t) agentTeamMap[name] = t;
     });
-    // Build outbound summary by agent team (for correct Support+Revered grouping)
+
     function buildOutboundSummary(week) {
       const _sOut  = parseOutboundRaw(globalData.supportOut  || supportOut);
       const _rOut  = parseOutboundRaw(globalData.reveredOut  || reveredOut);
@@ -844,7 +834,6 @@ async function loadDashboard() {
         { key:'credit',     label:'Credit ctrl',       sheets: [_cOut] },
       ];
 
-      // 2nd line — agent-based from cvRows
       const allCvWeeks2 = [...new Set(cvRows.map(r => r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
       const latestCvWk2 = Number(allCvWeeks2[allCvWeeks2.length-1]);
       const selCvWk2 = (!week||week==='latest') ? latestCvWk2 : Number(week);
@@ -877,15 +866,7 @@ async function loadDashboard() {
 
     globalData = { totals, dayOrder, dayData, companyRows, teamSummary, agents, cbRows, heatmaps:{}, weekNum, supportRevSplit, agentStatsRows, cvRows, zdRows, teamRows, agentTeamMap, aiMap: _aiMap, teamDefs, buildTeamSummary, buildOutboundSummary, outboundSummary, supportOut, reveredOut, onboardOut: onboardOut, riskOut, creditOut };
 
-    // Build heatmaps — Hour/Monday/Tuesday etc. are column headers in row 1
-    // Summary data is in row 2, heatmap data in rows 3+ (cols A-K empty)
-    const heatSheets = {
-      support: supportIn, onboarding: onboardIn, risk: riskIn,
-    };
-    // Read raw values for heatmaps to get both total and answered columns
-    // Store raw_calls for heatmap building
     globalData.rawCallsRows = rawCallsRows;
-    // Build cfg_numbers and cfg_agents maps for attribution
     const cfgNumbersRows = await readSheetRaw('cfg_numbers ');
     const cfgAgentsRows  = await readSheetRaw('cfg_agents ');
     const numTeamMap = {};
@@ -908,7 +889,6 @@ async function loadDashboard() {
     globalData.agentTeamMapHeat = agentTeamMapHeat;
     buildHeatmapsForWeek(currentHeatWeek);
 
-    // Build week filter tabs from available weeks in agent stats
     const availableWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
     globalData.availableWeeks = availableWeeks;
     renderDashboard();
@@ -928,9 +908,8 @@ async function loadDashboard() {
 function renderDashboard() {
   const { totals, dayOrder, dayData, teamSummary, agents, cbRows, weekNum } = globalData;
 
-  document.getElementById('weekBadge').textContent = 'Week ' + weekNum;
+  document.getElementById('weekBadge').textContent = 'Week ' + getCurrentISOWeek();
 
-  // Team overview week filter tabs
   const teamWeekTabsEl = document.getElementById('teamWeekTabs');
   if (teamWeekTabsEl) {
     const tmWeeks = globalData.availableWeeks || [];
@@ -959,12 +938,10 @@ function renderDashboard() {
     });
   }
 
-  // Build answer rate week tabs
   const answerWeekTabsEl = document.getElementById('answerWeekTabs');
   const buildTeamSummary = globalData.buildTeamSummary;
   const teamDefs = globalData.teamDefs;
   if (answerWeekTabsEl && teamDefs) {
-    const supportInRows = teamDefs.find(d => d.key === 'support')?.inR || [];
     const inWeeks = globalData.availableWeeks || [];
     answerWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
       inWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
@@ -978,14 +955,12 @@ function renderDashboard() {
       charts.answer.data.datasets[0].backgroundColor = newSummary.map(t => 'rgba(99,102,241,0.25)');
       charts.answer.data.datasets[1].data = newSummary.map(t => t.answerPct);
       charts.answer.data.datasets[1].backgroundColor = newSummary.map(t => t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626');
-      // Store for tooltip
       window._answerTeamSummary = newSummary;
       charts.answer.update();
     });
     window._answerTeamSummary = teamSummary;
   }
 
-  // Build agent week filter tabs
   const weekTabsEl = document.getElementById('weekTabs');
   const weeks = globalData.availableWeeks || [];
   weekTabsEl.innerHTML = '<button class="tab' + (currentWeek==='latest'?' active':'') + '" data-week="latest">Latest</button>' +
@@ -998,7 +973,6 @@ function renderDashboard() {
     renderAgents(currentAgentTeam);
   });
 
-  // Build heatmap week filter tabs (independent)
   const heatWeekTabsEl = document.getElementById('heatWeekTabs');
   heatWeekTabsEl.innerHTML = '<button class="tab' + (currentHeatWeek==='latest'?' active':'') + '" data-week="latest">Latest</button>' +
     weeks.map(w => `<button class="tab${currentHeatWeek==w?' active':''}" data-week="${w}">Wk ${w}</button>`).join('');
@@ -1011,7 +985,6 @@ function renderDashboard() {
     renderHeatmap(currentHeatTeam);
   });
 
-  // Metrics
   function buildOpsTotals(week) {
     const rawRows = globalData.rawCallsRows;
     if (!rawRows || rawRows.length < 2) return { total:0, inbound:0, outbound:0, missed:0 };
@@ -1026,7 +999,7 @@ function renderDashboard() {
 
     const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
     const latestWk = Number(allWeeks[allWeeks.length-1]);
-    const selWk = (!week||week==='latest') ? latestWk : Number(week);
+    const selWk = (!week||week==='latest') ? getCurrentISOWeek() : Number(week);
     const jan4 = new Date(Date.UTC(2026,0,4));
     const jan4Day = (jan4.getUTCDay()+6)%7;
     const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
@@ -1060,18 +1033,16 @@ function renderDashboard() {
 
   function renderOverview(week) {
     const t = buildOpsTotals(week);
-    const mp = v => t.total > 0 ? ((v/t.total)*100).toFixed(1)+'% of total' : '—';
     document.getElementById('mTotal').textContent    = t.total.toLocaleString();
     document.getElementById('mMissed').textContent   = t.missed.toLocaleString();
     document.getElementById('mMissedPct').textContent= t.total > 0 ? ((t.missed/t.inbound)*100).toFixed(1)+'% of inbound' : '—';
     document.getElementById('mInbound').textContent  = t.inbound.toLocaleString();
-    document.getElementById('mInboundPct').textContent = mp(t.inbound);
+    document.getElementById('mInboundPct').textContent = t.total > 0 ? ((t.inbound/t.total)*100).toFixed(1)+'% of total' : '—';
     document.getElementById('mOutbound').textContent = t.outbound.toLocaleString();
-    document.getElementById('mOutboundPct').textContent = mp(t.outbound);
+    document.getElementById('mOutboundPct').textContent = t.total > 0 ? ((t.outbound/t.total)*100).toFixed(1)+'% of total' : '—';
   }
   renderOverview('latest');
 
-  // Overview week filter tabs
   const overviewWeekTabsEl = document.getElementById('overviewWeekTabs');
   if (overviewWeekTabsEl) {
     const ovWeeks = globalData.availableWeeks || [];
@@ -1085,7 +1056,6 @@ function renderDashboard() {
     });
   }
 
-  // Team cards
   const TC = {support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c',keyaccounts:'#be185d',smartbook:'#374151'};
   document.getElementById('teamGrid').innerHTML = teamSummary.map(t => {
     const tc = TC[t.key]||'#888';
@@ -1102,12 +1072,9 @@ function renderDashboard() {
     </div>`;
   }).join('');
 
-  // Charts
   if (charts.day) charts.day.destroy();
   if (charts.answer) charts.answer.destroy();
   if (charts.outbound) charts.outbound.destroy();
-
-
 
   function buildDayDataFromRaw(week) {
     const rawRows = globalData.rawCallsRows;
@@ -1121,10 +1088,8 @@ function renderDashboard() {
     const iUser  = hdrs.indexOf('user_name');
     const agentTeamMap = globalData.agentTeamMap || {};
 
-    // Get week date range
     const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-    const latestWk = Number(allWeeks[allWeeks.length-1]);
-    const selWk = (!week||week==='latest') ? latestWk : Number(week);
+    const selWk = (!week||week==='latest') ? getCurrentISOWeek() : Number(week);
     const jan4 = new Date(Date.UTC(2026,0,4));
     const jan4Day = (jan4.getUTCDay()+6)%7;
     const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
@@ -1178,18 +1143,11 @@ function renderDashboard() {
     data: buildDayChartData(initialDayData),
     options:{
       responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        datalabels: false,
-      },
-      scales:{
-        x:{grid:{display:false}},
-        y:{grid:{color:'rgba(0,0,0,.05)'}}
-      }
+      plugins:{ legend:{display:false}, datalabels: false },
+      scales:{ x:{grid:{display:false}}, y:{grid:{color:'rgba(0,0,0,.05)'}} }
     }
   });
 
-  // Day chart week filter tabs
   const dayWeekTabsEl = document.getElementById('dayWeekTabs');
   if (dayWeekTabsEl) {
     const dayWeeks = globalData.availableWeeks || [];
@@ -1199,11 +1157,7 @@ function renderDashboard() {
       const btn = e.target.closest('.tab'); if (!btn) return;
       document.querySelectorAll('#dayWeekTabs .tab').forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
-      const selWeek = btn.dataset.week;
-      const allWeeks = [...new Set((globalData.companyRows||[]).map(r => r['week of the year']||r['Week of the year']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-      const latestWk = allWeeks[allWeeks.length-1];
-      const selWk = (!selWeek || selWeek==='latest') ? latestWk : Number(selWeek);
-      const newDayData = buildDayDataFromRaw(selWeek);
+      const newDayData = buildDayDataFromRaw(btn.dataset.week);
       charts.day.data = buildDayChartData(newDayData);
       charts.day.update();
     });
@@ -1213,42 +1167,18 @@ function renderDashboard() {
     type:'bar', data:{
       labels: teamSummary.map(t=>t.label),
       datasets:[
-        {
-          label:'Received',
-          data: teamSummary.map(t => t.inbound > 0 ? 100 : 0),
-          backgroundColor: teamSummary.map(t => 'rgba(99,102,241,0.25)'),
-          barPercentage: 0.9,
-          categoryPercentage: 0.8,
-        },
-        {
-          label:'Answered %',
-          data: teamSummary.map(t => t.answerPct),
-          backgroundColor: teamSummary.map(t => t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626'),
-          barPercentage: 0.9,
-          categoryPercentage: 0.8,
-        }
+        { label:'Received', data: teamSummary.map(t => t.inbound > 0 ? 100 : 0), backgroundColor: teamSummary.map(t => 'rgba(99,102,241,0.25)'), barPercentage: 0.9, categoryPercentage: 0.8 },
+        { label:'Answered %', data: teamSummary.map(t => t.answerPct), backgroundColor: teamSummary.map(t => t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626'), barPercentage: 0.9, categoryPercentage: 0.8 }
       ]
     },
     options:{
-      indexAxis:'y',
-      responsive:true,
-      maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        tooltip:{
-          callbacks:{
-            label: function(ctx) {
-              const t = (window._answerTeamSummary || teamSummary)[ctx.dataIndex];
-              if (ctx.datasetIndex === 0) return `Received: ${t.inbound}`;
-              return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.inTalkTime)}`;
-            }
-          }
-        }
-      },
-      scales:{
-        x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},
-        y:{grid:{display:false}}
-      }
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: function(ctx) {
+        const t = (window._answerTeamSummary || teamSummary)[ctx.dataIndex];
+        if (ctx.datasetIndex === 0) return `Received: ${t.inbound}`;
+        return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.inTalkTime)}`;
+      }}}},
+      scales:{ x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}}, y:{grid:{display:false}} }
     }
   });
 
@@ -1258,44 +1188,25 @@ function renderDashboard() {
     type:'bar', data:{
       labels: outSummary.map(t=>t.label),
       datasets:[
-        {
-          label:'Total outbound',
-          data: outSummary.map(t => t.outTotal > 0 ? 100 : 0),
-          backgroundColor: outSummary.map(() => 'rgba(99,102,241,0.2)'),
-          barPercentage: 0.9, categoryPercentage: 0.8,
-        },
-        {
-          label:'Connected %',
-          data: outSummary.map(t=>t.connPct),
-          backgroundColor:'#1d4ed8',
-          barPercentage: 0.9, categoryPercentage: 0.8,
-        }
+        { label:'Total outbound', data: outSummary.map(t => t.outTotal > 0 ? 100 : 0), backgroundColor: outSummary.map(() => 'rgba(99,102,241,0.2)'), barPercentage: 0.9, categoryPercentage: 0.8 },
+        { label:'Connected %', data: outSummary.map(t=>t.connPct), backgroundColor:'#1d4ed8', barPercentage: 0.9, categoryPercentage: 0.8 }
       ]
     },
     options:{
-      indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        tooltip:{callbacks:{
-          label: function(ctx) {
-            const t = (window._outboundSummary||[])[ctx.dataIndex];
-            if (!t) return '';
-            if (ctx.datasetIndex === 0) return `Total outbound: ${t.outTotal}`;
-            return `Connected: ${t.outConn} (${t.connPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.outTalkTime)}`;
-          }
-        }}
-      },
-      scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},y:{grid:{display:false}}}
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: function(ctx) {
+        const t = (window._outboundSummary||[])[ctx.dataIndex];
+        if (!t) return '';
+        if (ctx.datasetIndex === 0) return `Total outbound: ${t.outTotal}`;
+        return `Connected: ${t.outConn} (${t.connPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.outTalkTime)}`;
+      }}}},
+      scales:{ x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}}, y:{grid:{display:false}} }
     }
   });
 
-  // Outbound week filter tabs
   const outWeekTabsEl = document.getElementById('outboundWeekTabs');
   if (outWeekTabsEl) {
-    const outWeeks = [...new Set([
-      ...(globalData.availableWeeks||[]),
-      ...parseOutboundRaw(globalData.supportOut||[]).map(r=>r.wk)
-    ])].filter(w=>w>0).sort((a,b)=>a-b);
+    const outWeeks = [...new Set([...(globalData.availableWeeks||[]), ...parseOutboundRaw(globalData.supportOut||[]).map(r=>r.wk)])].filter(w=>w>0).sort((a,b)=>a-b);
     outWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
       outWeeks.map(w => `<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
     outWeekTabsEl.addEventListener('click', e => {
@@ -1312,15 +1223,9 @@ function renderDashboard() {
     });
   }
 
-  // Heatmap
   renderHeatmap(currentHeatTeam);
-
-  // Agent table
   renderAgents(currentAgentTeam);
 
-  // Callbacks
-  // Aggregate callback rows by week
-  // New column structure: Week, Date, Callback requests, Called back, Not actioned, Rate %, Avg pending (mins)
   const cbByWeek = {};
   cbRows.forEach(r => {
     const week = r['Week'] || r['week 22'];
@@ -1335,7 +1240,6 @@ function renderDashboard() {
     cbByWeek[wk].calledBack += cb;
     cbByWeek[wk].notActioned += na;
     if (pend > 0) { cbByWeek[wk].pendingSum += pend; cbByWeek[wk].pendingCount++; }
-    // Store daily row if date present
     const date = r['Date'];
     if (date) cbByWeek[wk].days.push({ date, req, cb, na, pend, rate: Number(r['Rate %'])||0 });
   });
@@ -1344,13 +1248,10 @@ function renderDashboard() {
 
   function parseDateParts(dateStr) {
     if (!dateStr) return null;
-    // Handle Excel date serial number (e.g. 46190)
     if (typeof dateStr === 'number') {
-      // Excel serial: days since 1900-01-00 (with leap year bug)
       const d = new Date((dateStr - 25569) * 86400 * 1000);
       return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
     }
-    // Handle string "2026-06-15" or "15/06/2026"
     const s = String(dateStr).trim();
     const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (iso) return new Date(Number(iso[1]), Number(iso[2])-1, Number(iso[3]));
@@ -1366,7 +1267,6 @@ function renderDashboard() {
       const avgPending = d.pendingCount > 0 ? (d.pendingSum / d.pendingCount) : 0;
       const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
       const wkId = 'cbw-' + week;
-
       cbHtml += `<tr class="cb-week-row" data-wk="${wkId}" onclick="toggleCbWeek('${wkId}',this)">
         <td class="l"><strong>Week ${week}</strong></td>
         <td class="l">${d.total||'—'}</td>
@@ -1375,7 +1275,6 @@ function renderDashboard() {
         <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
         <td class="l">${avgPending ? avgPending.toFixed(1)+' mins' : '—'}</td>
       </tr>`;
-
       const sortedDays = d.days.map(dy => dy.date).sort();
       sortedDays.forEach(date => {
         const dy = d.days.find(x => x.date === date);
@@ -1397,7 +1296,6 @@ function renderDashboard() {
   if (!cbHtml) cbHtml = '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
   document.getElementById('cbBody').innerHTML = cbHtml;
 
-  // Tab listeners
   document.getElementById('heatTabs').addEventListener('click', e => {
     const btn = e.target.closest('.tab'); if (!btn) return;
     document.querySelectorAll('#heatTabs .tab').forEach(t=>t.classList.remove('active'));
@@ -1406,13 +1304,11 @@ function renderDashboard() {
     renderHeatmap(currentHeatTeam);
   });
 
-  // Outbound heatmap
   let currentOutHeatTeam = 'supportrev';
   let currentOutHeatWeek = 'latest';
   buildOutboundHeatmapsForWeek(currentOutHeatWeek);
   renderOutHeatmap(currentOutHeatTeam);
 
-  // Outbound heatmap week tabs
   const outHeatWeekTabsEl = document.getElementById('outHeatWeekTabs');
   if (outHeatWeekTabsEl) {
     outHeatWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' +
@@ -1449,25 +1345,20 @@ function renderDashboard() {
 function fmtTalkTime(raw) {
   if (!raw || raw === '' || raw === '—') return '—';
   const s = String(raw).trim();
-  // HH:MM:SS string
   if (s.match(/^\d+:\d{2}:\d{2}$/)) {
     const parts = s.split(':');
-    const h = parseInt(parts[0]);
-    const m = parseInt(parts[1]);
+    const h = parseInt(parts[0]); const m = parseInt(parts[1]);
     return `${h}h ${m}m`;
   }
-  // Decimal fraction of a day (Excel serial time)
   const num = parseFloat(s);
   if (!isNaN(num) && num > 0) {
     const totalMins = Math.round(num * 24 * 60);
-    const h = Math.floor(totalMins / 60);
-    const m = totalMins % 60;
+    const h = Math.floor(totalMins / 60); const m = totalMins % 60;
     return `${h}h ${m}m`;
   }
   return '—';
 }
 
-// Ops team filters for charts
 const DAY_CHART_INBOUND_TEAMS = new Set([
   'Support','Support Revered','Onboarding','Onboarding stage 1 calls',
   'Risk and compliance','Support - Credit Control','2nd line (Tech support team)'
@@ -1475,15 +1366,12 @@ const DAY_CHART_INBOUND_TEAMS = new Set([
 const DAY_CHART_INBOUND_NUMS = new Set(['286844','286845','286847','286848','192211','201178','1216204','326618']);
 const DAY_CHART_OUTBOUND_AGENTS = new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']);
 
-// Parse raw outbound sheet (2D array) into week summary rows
 function parseOutboundRaw(rawRows) {
   if (!rawRows || rawRows.length < 2) return [];
   const result = [];
   for (let i = 1; i < rawRows.length; i++) {
     const wk = Number(rawRows[i][0]);
-    if (wk > 0) {
-      result.push({ wk, total: Number(rawRows[i][1]||0), conn: Number(rawRows[i][2]||0), time: String(rawRows[i][4]||'') });
-    }
+    if (wk > 0) result.push({ wk, total: Number(rawRows[i][1]||0), conn: Number(rawRows[i][2]||0), time: String(rawRows[i][4]||'') });
   }
   return result;
 }
@@ -1499,7 +1387,6 @@ function resolveHeatTeam(row, hdrs, numTeamMap, agentTeamMapHeat) {
   const userName  = String(row[iUser]||'').trim();
   const direction = String(row[iDir] ||'').trim();
   const answered  = row[iAns] !== '' && row[iAns] != null;
-  // Return raw Aircall team_name — heatmap filters by these directly
   if (teamName) return teamName;
   if (numberId && numTeamMap[String(parseInt(numberId))]) return numTeamMap[String(parseInt(numberId))];
   if (userName && agentTeamMapHeat[userName] && (direction==='outbound'||answered)) return agentTeamMapHeat[userName];
@@ -1511,11 +1398,8 @@ function buildHeatmapsForWeek(week) {
   if (!rawCallsRows || rawCallsRows.length < 2) return;
 
   const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
-  const latestWeek = Number(allWeeks[allWeeks.length - 1]);
-  const selectedWeek = (!week || week === 'latest') ? latestWeek : Number(week);
+  const selectedWeek = (!week || week === 'latest') ? getCurrentISOWeek() : Number(week);
 
-  // Convert week number to date range (Mon-Sun UTC)
-  // Find Monday of ISO week selectedWeek
   const jan4 = new Date(Date.UTC(2026, 0, 4));
   const jan4Day = (jan4.getUTCDay() + 6) % 7;
   const week1Mon = new Date(jan4.getTime() - jan4Day * 86400000);
@@ -1533,7 +1417,6 @@ function buildHeatmapsForWeek(week) {
   const iAns   = hdrs.indexOf('answered_at');
   const iDir   = hdrs.indexOf('direction');
 
-  // Team keys: team_name values + dedicated number_ids
   const HEAT_TEAMS = {
     'support':    { names: ['Support'],                                          nums: new Set(['286844','286845','286847','286848','192211']) },
     'revered':    { names: ['Support Revered'],                                  nums: new Set([]) },
@@ -1546,8 +1429,8 @@ function buildHeatmapsForWeek(week) {
   globalData.heatmaps = {};
 
   Object.entries(HEAT_TEAMS).forEach(([key, labels]) => {
-    const heat    = HOURS.map(() => new Array(5).fill(0)); // total [hour][day Mon-Fri]
-    const heatAns = HOURS.map(() => new Array(5).fill(0)); // answered
+    const heat    = HOURS.map(() => new Array(5).fill(0));
+    const heatAns = HOURS.map(() => new Array(5).fill(0));
 
     for (let i = 1; i < rawCallsRows.length; i++) {
       const row = rawCallsRows[i];
@@ -1556,21 +1439,19 @@ function buildHeatmapsForWeek(week) {
       const direction = String(row[iDir]||'').trim();
       if (direction !== 'inbound') continue;
 
-        const teamName2 = String(row[hdrs.indexOf('team_name')]||'').trim();
+      const teamName2 = String(row[hdrs.indexOf('team_name')]||'').trim();
       const numId2 = String(row[hdrs.indexOf('number_id')]||'').trim();
       const teamDef2 = HEAT_TEAMS[key];
       const matches = teamDef2.names.includes(teamName2) || teamDef2.nums.has(numId2);
       if (!matches) continue;
 
       const d = new Date(started * 1000);
-      // BST offset: add 1 hour for London time
       const localHour = (d.getUTCHours() + 1) % 24;
-      const utcDay = d.getUTCDay(); // 0=Sun
-      // After +1 hour, Sunday 23:xx becomes Monday 00:xx — adjust day
+      const utcDay = d.getUTCDay();
       let adjustedDay = utcDay;
       if (d.getUTCHours() === 23) adjustedDay = (utcDay + 1) % 7;
-      const dayIdx = (adjustedDay + 6) % 7; // 0=Mon
-      if (dayIdx > 4) continue; // skip Sat/Sun
+      const dayIdx = (adjustedDay + 6) % 7;
+      if (dayIdx > 4) continue;
       const hourIdx = HOURS.indexOf(localHour);
       if (hourIdx < 0) continue;
 
@@ -1581,9 +1462,7 @@ function buildHeatmapsForWeek(week) {
 
     const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
     HOURS.forEach((hr, hi) => {
-      DAYS.forEach((day, di) => {
-        hm[day].push({ hr, v: heat[hi][di], va: heatAns[hi][di] });
-      });
+      DAYS.forEach((day, di) => { hm[day].push({ hr, v: heat[hi][di], va: heatAns[hi][di] }); });
     });
     globalData.heatmaps[key] = hm;
   });
@@ -1593,9 +1472,7 @@ function buildOutboundHeatmapsForWeek(week) {
   const rawCallsRows = globalData.rawCallsRows;
   if (!rawCallsRows || rawCallsRows.length < 2) return;
 
-  const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
-  const latestWeek = Number(allWeeks[allWeeks.length - 1]);
-  const selectedWeek = (!week || week === 'latest') ? latestWeek : Number(week);
+  const selectedWeek = (!week || week === 'latest') ? getCurrentISOWeek() : Number(week);
 
   const jan4 = new Date(Date.UTC(2026, 0, 4));
   const jan4Day = (jan4.getUTCDay() + 6) % 7;
@@ -1612,7 +1489,6 @@ function buildOutboundHeatmapsForWeek(week) {
   const iStart = hdrs.indexOf('started_at');
   const iDir   = hdrs.indexOf('direction');
   const iUser  = hdrs.indexOf('user_name');
-  const iNum   = hdrs.indexOf('number_id');
 
   const OUT_TEAMS = {
     'supportrev': ['Support + Revered'],
@@ -1653,9 +1529,7 @@ function buildOutboundHeatmapsForWeek(week) {
 
     const hm = {Mon:[],Tue:[],Wed:[],Thu:[],Fri:[]};
     HOURS.forEach((hr, hi) => {
-      DAYS.forEach((day, di) => {
-        hm[day].push({ hr, v: heat[hi][di], va: null });
-      });
+      DAYS.forEach((day, di) => { hm[day].push({ hr, v: heat[hi][di], va: null }); });
     });
     globalData.outHeatmaps[key] = hm;
   });
@@ -1702,20 +1576,16 @@ function renderHeatmap(team) {
   const hourLabels = ['8am','9am','10am','11am','12pm','1pm','2pm','3pm','4pm','5pm'];
   let max = 0;
   wkdays.forEach(d => (td[d]||[]).forEach(p => { if(p.v>max) max=p.v; }));
-  // Check if we have answered data
   const hasAnswered = wkdays.some(d => (td[d]||[]).some(p => p.va !== null && p.va !== undefined));
   const grid = document.getElementById('heatmap');
   grid.innerHTML = '';
   grid.style.gridTemplateColumns = '44px repeat(5,1fr)';
-  // Header row
   const h0 = document.createElement('div'); h0.className='heat-head'; grid.appendChild(h0);
   wkdays.forEach(d => {
     const h = document.createElement('div'); h.className='heat-head';
     if (hasAnswered) {
       h.innerHTML = `<span style="flex:1;text-align:center;font-size:9px">${d}<br><span style="color:var(--blue);font-size:8px">Rcvd|Ans</span></span>`;
-    } else {
-      h.textContent = d;
-    }
+    } else { h.textContent = d; }
     grid.appendChild(h);
   });
   hours.forEach((hr,i) => {
@@ -1730,19 +1600,11 @@ function renderHeatmap(team) {
       const bg = `rgba(29,78,216,${0.08+pct*0.85})`;
       const fg = pct>0.5?'#fff':'var(--muted)';
       const cell = document.createElement('div'); cell.className='heat-cell';
-      cell.style.background = bg;
-      cell.style.color = fg;
+      cell.style.background = bg; cell.style.color = fg;
       if (hasAnswered && pt.va !== null && pt.va !== undefined) {
         const rate = pt.v > 0 ? pt.va / pt.v : 1;
-        // Soft pastel colours for answered rate
-        const ansBg = pt.v === 0 ? 'transparent'
-          : rate <= 0.5 ? '#fca5a5'   // soft red
-          : rate <= 0.9 ? '#fed7aa'   // soft amber
-          : '#bbf7d0';                // soft green
-        const ansFg = pt.v === 0 ? 'var(--subtle)'
-          : rate <= 0.5 ? '#991b1b'
-          : rate <= 0.9 ? '#92400e'
-          : '#166534';
+        const ansBg = pt.v === 0 ? 'transparent' : rate <= 0.5 ? '#fca5a5' : rate <= 0.9 ? '#fed7aa' : '#bbf7d0';
+        const ansFg = pt.v === 0 ? 'var(--subtle)' : rate <= 0.5 ? '#991b1b' : rate <= 0.9 ? '#92400e' : '#166534';
         const ansVal = pt.v === 0 ? '' : String(pt.va);
         cell.innerHTML = `<div class="heat-cell-left">${pt.v>0?pt.v:''}</div><div class="heat-cell-right" style="background:${ansBg};color:${ansFg}">${ansVal}</div>`;
       } else {
@@ -1764,7 +1626,15 @@ function buildAgentsForWeek(week) {
   // Determine selected week
   const allWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
   const latestWeek = allWeeks[allWeeks.length - 1];
-  const selectedWeek = (week === 'latest' || !week) ? latestWeek : Number(week);
+  const isLatest = (week === 'latest' || !week);
+  const currentIsoWeek = getCurrentISOWeek();
+  // Live data (calls, Zendesk) always uses current ISO week when 'latest'
+  const selectedDataWeek = isLatest ? currentIsoWeek : Number(week);
+  // Agent stats: use current week if data exists, else fall back to latest available
+  const agentStatsHasCurrentWeek = agentStatsRows.some(r => Number(r['Week']) === currentIsoWeek);
+  const selectedWeek = isLatest
+    ? (agentStatsHasCurrentWeek ? currentIsoWeek : Number(latestWeek))
+    : Number(week);
 
   // Agent stats for selected week
   const agentAgg = {};
@@ -1785,14 +1655,14 @@ function buildAgentsForWeek(week) {
     addSec('do_not_disturb', 'Do not disturb');
   });
 
-  // Call volumes for selected week
+  // Call volumes for selected week (follows agent stats week)
   const cvMap = {};
   cvRows.filter(r => Number(r['Week']) === selectedWeek).forEach(r => {
     const name = String(r['User']||'').trim();
     if (name) cvMap[name] = r;
   });
 
-  // Calculate per-agent talk times from raw_calls for the selected week
+  // Talk times from raw_calls — uses selectedDataWeek (current ISO week for 'latest')
   const rawRows = globalData.rawCallsRows;
   const talkTimeMap = {};
   if (rawRows && rawRows.length > 1) {
@@ -1802,11 +1672,10 @@ function buildAgentsForWeek(week) {
     const rAns   = rHdrs.indexOf('answered_at');
     const rEnd   = rHdrs.indexOf('ended_at');
     const rUser  = rHdrs.indexOf('user_name');
-    // Get week date range
     const jan4 = new Date(Date.UTC(2026,0,4));
     const jan4Day = (jan4.getUTCDay()+6)%7;
     const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
-    const weekMon = new Date(week1Mon.getTime()+(selectedWeek-1)*7*86400000);
+    const weekMon = new Date(week1Mon.getTime()+(selectedDataWeek-1)*7*86400000);
     const wkStart = Math.floor(weekMon.getTime()/1000);
     const wkEnd   = wkStart + 7*86400;
     for (let i = 1; i < rawRows.length; i++) {
@@ -1826,7 +1695,7 @@ function buildAgentsForWeek(week) {
     }
   }
 
-  // Build call counts from raw_calls (used when cvRows missing for this week)
+  // Raw call counts — uses selectedDataWeek
   const rawCallCounts = {};
   if (rawRows && rawRows.length > 1) {
     const rHdrs2 = rawRows[0].map(h => String(h).trim());
@@ -1838,7 +1707,7 @@ function buildAgentsForWeek(week) {
     const jan4c = new Date(Date.UTC(2026,0,4));
     const jan4Dayc = (jan4c.getUTCDay()+6)%7;
     const week1Monc = new Date(jan4c.getTime()-jan4Dayc*86400000);
-    const weekMonc = new Date(week1Monc.getTime()+(selectedWeek-1)*7*86400000);
+    const weekMonc = new Date(week1Monc.getTime()+(selectedDataWeek-1)*7*86400000);
     const wkStartc = Math.floor(weekMonc.getTime()/1000);
     const wkEndc   = wkStartc + 7*86400;
     for (let i = 1; i < rawRows.length; i++) {
@@ -1859,12 +1728,10 @@ function buildAgentsForWeek(week) {
     }
   }
 
- // Zendesk — use latest ZD week independently of agent stats week
-const allZdWeeks = [...new Set(zdRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
-const latestZdWeek = Number(allZdWeeks[allZdWeeks.length - 1]);
-const selectedZdWeek = (week === 'latest' || !week) ? latestZdWeek : Number(week);
-const zdMap = {};
-zdRows.filter(r => Number(r['Week']) === selectedZdWeek).forEach(r => {
+  // Zendesk — current ISO week for 'latest', specific week otherwise
+  const selectedZdWeek = isLatest ? currentIsoWeek : Number(week);
+  const zdMap = {};
+  zdRows.filter(r => Number(r['Week']) === selectedZdWeek).forEach(r => {
     const name = String(r['Agent name']||'').trim();
     if (!name) return;
     if (!zdMap[name]) zdMap[name] = { internal:0, public:0, solved:0 };
@@ -1881,7 +1748,6 @@ zdRows.filter(r => Number(r['Week']) === selectedZdWeek).forEach(r => {
     if (name && t) agentTeamMap[name] = t;
   });
 
-  // Build agent list
   return Object.entries(agentAgg).map(([name, s]) => {
     const cv = cvMap[name] || null;
     const zd = zdMap[name] || null;
@@ -1899,7 +1765,6 @@ zdRows.filter(r => Number(r['Week']) === selectedZdWeek).forEach(r => {
     const zdProd = comments * COMMENT_TIME;
     const callUtil = Math.min(Math.round(callProd / CONTRACTED_SECS * 100), 100);
     const zdUtil = Math.min(Math.round(zdProd / CONTRACTED_SECS * 100), 100);
-    const activeSecs = gs('available') + gs('in_call') + gs('after_call_work') + gs('doing_back_office') + gs('in_training') + gs('do_not_disturb');
     const partWeek = false;
     const team = agentTeamMap[name] || (globalData.agentTeamMap ? (globalData.agentTeamMap[name] || '—') : '—');
     const tt = talkTimeMap[name] || { inbound: 0, outbound: 0 };
@@ -1913,33 +1778,21 @@ zdRows.filter(r => Number(r['Week']) === selectedZdWeek).forEach(r => {
 }
 
 function renderAgents(team) {
-  // Rebuild agents for selected week
   const agents = buildAgentsForWeek(currentWeek);
 
-  // Update week badge
   const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
-  const latestWeek = allWeeks[allWeeks.length - 1];
-  const displayWeek = (currentWeek === 'latest' || !currentWeek) ? latestWeek : currentWeek;
-  document.getElementById('weekBadge').textContent = 'Week ' + displayWeek;
+  document.getElementById('weekBadge').textContent = 'Week ' + getCurrentISOWeek();
 
-  // ── Show/hide Team column based on filter ──
   const table = document.getElementById('agentTable');
-  if (team === 'all') {
-    table.classList.remove('hide-team');
-  } else {
-    table.classList.add('hide-team');
-  }
+  if (team === 'all') { table.classList.remove('hide-team'); } else { table.classList.add('hide-team'); }
 
-  // Only show agents in dashboard teams, filtered by week
   const list = team === 'all'
     ? agents.filter(a => DASHBOARD_TEAMS.has(a.team))
     : agents.filter(a => a.team === team);
   const seen = {};
   const rows = list.filter(a => { if(seen[a.name]) return false; seen[a.name]=true; return true; });
 
-  let summaryRowHtml = '';
-
-    document.getElementById('agentBody').innerHTML = rows.map(a => {
+  document.getElementById('agentBody').innerHTML = rows.map(a => {
     const tc = TEAM_COLORS[a.team]||'#888';
     const sh = TEAM_SHORT[a.team]||a.team;
     const cs = scoreStyle(a.callUtil);
@@ -1948,15 +1801,13 @@ function renderAgents(team) {
       ? `<td style="color:var(--red)">${fmtHrs(a.excess_acw)}<span class="excess-pill">−${fmtHrs(a.excess_acw)}</span></td>`
       : '<td class="muted">—</td>';
     const ls = a.out_for_lunch||0;
-    const lh = Math.floor(ls/3600);
-    const lm = Math.floor((ls%3600)/60);
+    const lh = Math.floor(ls/3600); const lm = Math.floor((ls%3600)/60);
     const lDisp = ls>0 ? (lh>0 ? `${lh}h ${lm}m` : `${lm}m`) : '—';
     const lCell = `<td style="color:var(--amber)">${lDisp} ${lunchFlag(ls,a.partWeek)}</td>`;
     const cv = a.cv; const zd = a.zd;
     const cvC = `<td>${dv(a.inbound_calls)}</td><td>${dv(a.outbound_calls)}</td><td>${dv(a.total_outbound)}</td>`;
     const ttIn  = a.talk_inbound  > 0 ? fmtHrs(a.talk_inbound)  : '—';
     const ttOut = a.talk_outbound > 0 ? fmtHrs(a.talk_outbound) : '—';
-    const ttC = `<td style="color:var(--green)">${fh(ttIn)}</td><td style="color:var(--green)">${fh(ttOut)}</td>`;
     const zdC = zd
       ? `<td>${dv(zd.internal)}</td><td>${dv(zd.public)}</td><td style="font-weight:600;color:${zd.solved>0?'var(--keyaccts)':'var(--subtle)'}">${zd.solved||'—'}</td>`
       : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
@@ -1985,14 +1836,6 @@ function renderAgents(team) {
 // CALLBACK EXPAND/COLLAPSE
 // ============================================================
 function applyCustomWeek() {
-  const from = document.getElementById('customFrom').value;
-  const to   = document.getElementById('customTo').value;
-  if (!from || !to) return;
-  // Find weeks that fall within the custom range
-  const fromDate = new Date(from);
-  const toDate   = new Date(to);
-  const weeks = globalData.availableWeeks || [];
-  // Use the latest week within range — simplification until full date-range filtering
   alert('Custom date range coming soon — use the week buttons for now.');
 }
 
