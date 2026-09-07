@@ -1639,9 +1639,15 @@ function renderDashboard() {
 
   window.debugCallbacks = function() {
     const rawRows = globalData.rawCallsRows;
-    if (!rawRows || rawRows.length < 2) { console.log('No raw_calls data loaded'); return; }
+    if (!rawRows || rawRows.length < 2) { console.log('No raw_calls data loaded, length:', rawRows?.length); return; }
     const hdrs = rawRows[0].map(h => String(h).trim());
     console.log('raw_calls columns:', hdrs);
+    console.log('raw_calls row count (incl header):', rawRows.length);
+    const iS = hdrs.indexOf('started_at');
+    const samples = [rawRows[1], rawRows[Math.floor(rawRows.length/2)], rawRows[rawRows.length-1]].map(r => {
+      const ts = Number(r[iS]); return { raw: r[iS], asDate: !isNaN(ts)&&ts>1e9 ? new Date(ts*1000).toISOString().split('T')[0] : String(r[iS]).split('T')[0] };
+    });
+    console.log('started_at samples (first/mid/last):', samples);
 
     // Convert callback dates to YYYY-MM-DD (handles Excel serial numbers and ISO strings)
     function toYMD(val) {
