@@ -415,6 +415,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
 
     <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Callers who pressed * to request a callback. Shows total requests, how many were called back, and average pending time." data-update="Updated every Monday at 6am">i</button></div>
+    <button onclick="debugCallbacks()" style="margin-bottom:8px;padding:4px 10px;font-size:11px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--amber-light);color:var(--amber)">Debug: log raw_calls for callback dates</button>
     <div class="card" style="overflow-x:auto;margin-bottom:24px">
       <table><thead><tr>
         <th class="l">Week</th><th class="l">Callback requests</th><th class="l">Called back</th>
@@ -1600,6 +1601,37 @@ function renderDashboard() {
   }
   if (!cbHtml) cbHtml = '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
   document.getElementById('cbBody').innerHTML = cbHtml;
+
+  window.debugCallbacks = function() {
+    const rawRows = globalData.rawCallsRows;
+    if (!rawRows || rawRows.length < 2) { console.log('No raw_calls data loaded'); return; }
+    const hdrs = rawRows[0].map(h => String(h).trim());
+    console.log('raw_calls columns:', hdrs);
+    const cbDates = new Set();
+    (globalData.cbRows||[]).forEach(r => { if (r['Date']) cbDates.add(String(r['Date']).trim()); });
+    console.log('Callback dates to match:', [...cbDates]);
+    const iDir = hdrs.indexOf('direction'), iStart = hdrs.indexOf('started_at');
+    const iTeam = hdrs.indexOf('team_name'), iNum = hdrs.indexOf('number_id');
+    const iType = hdrs.indexOf('call_type') >= 0 ? hdrs.indexOf('call_type') : hdrs.indexOf('type');
+    const hits = [];
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const started = String(row[iStart]||'');
+      const datePart = started.split('T')[0].replace(/-/g,'/').replace(/^(\d{4})\/(\d{2})\/(\d{2})$/, '$2/$3/$1');
+      if (cbDates.has(datePart) || cbDates.has(started.split('T')[0])) {
+        hits.push({ direction: row[iDir], started_at: row[iStart], team_name: row[iTeam], number_id: row[iNum], type: iType>=0?row[iType]:'n/a', all: Object.fromEntries(hdrs.map((h,j)=>[h,row[j]])) });
+      }
+    }
+    console.log(`raw_calls rows on callback dates (${hits.length} found):`, hits);
+    if (hits.length > 0) {
+      const teams = [...new Set(hits.map(h=>h.team_name))];
+      const dirs  = [...new Set(hits.map(h=>h.direction))];
+      const types = [...new Set(hits.map(h=>h.type))];
+      console.log('Unique teams on those dates:', teams);
+      console.log('Unique directions on those dates:', dirs);
+      console.log('Unique types on those dates:', types);
+    }
+  };
 
   document.getElementById('heatTabs').addEventListener('click', e => {
     const btn = e.target.closest('.tab'); if (!btn) return;
