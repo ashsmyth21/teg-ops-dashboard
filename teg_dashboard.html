@@ -556,6 +556,47 @@ async function readSheetRaw(sheetName) {
   } catch(e) { console.error('readSheetRaw error', sheetName, e); return []; }
 }
 
+function _colNumToLetter(n) {
+  let s = '';
+  while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
+  return s;
+}
+
+async function readSheetRawLarge(sheetName) {
+  try {
+    const token = await getToken();
+    if (!token) return [];
+    const base = await getFileEndpoint();
+    const enc = encodeURIComponent(sheetName);
+    const h = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' };
+
+    // Tiny request: get dimensions only (no values)
+    const dimResp = await fetch(
+      `${base}/workbook/worksheets('${enc}')/usedRange?$select=rowCount,columnCount`,
+      { headers: h }
+    );
+    if (!dimResp.ok) { console.error('dim error', sheetName, dimResp.status); return []; }
+    const { rowCount, columnCount } = await dimResp.json();
+    if (!rowCount || !columnCount) return [];
+
+    const endCol = _colNumToLetter(columnCount);
+    const CHUNK = 5000;
+    const allRows = [];
+
+    for (let r = 1; r <= rowCount; r += CHUNK) {
+      const endRow = Math.min(r + CHUNK - 1, rowCount);
+      const resp = await fetch(
+        `${base}/workbook/worksheets('${enc}')/range(address='A${r}:${endCol}${endRow}')?$select=values`,
+        { headers: h }
+      );
+      if (!resp.ok) { console.error('chunk error', sheetName, r, resp.status); break; }
+      const d = await resp.json();
+      if (d.values) allRows.push(...d.values);
+    }
+    return allRows;
+  } catch(e) { console.error('readSheetRawLarge error', sheetName, e); return []; }
+}
+
 // ============================================================
 // ISO WEEK HELPER
 // ============================================================
@@ -669,7 +710,7 @@ async function loadDashboard() {
       readSheet('Key accounts outbound'),
       readSheet('Smartbook inbound'),
       readSheet('Smartbook outbound'),
-      readSheetRaw('raw_calls'),
+      readSheetRawLarge('raw_calls'),
     ]);
 
     // ---- Company metrics ----
