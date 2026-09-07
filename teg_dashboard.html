@@ -756,13 +756,58 @@ async function loadDashboard() {
       const selCvWeek = (!week || week === 'latest') ? latestCvWeek : Number(week);
       const cvWeekRows = cvRows.filter(r => Number(r['Week']) === selCvWeek);
 
-      return teamDefs.map(def => {
-        const inF  = def.inR.find(r => Number(r['Week of the year']) === selectedInWeek) || def.inR[0] || {};
-        const outF = def.outR.find(r => Number(r['Week of the year']) === selectedInWeek) || def.outR[0] || {};
+      // Pre-compute raw_calls inbound counts per team for the selected week
+      // Used as fallback when the per-team sheet has no row for this week
+      const rawInByTeam = { support:{inbound:0,answered:0,missed:0}, revered:{inbound:0,answered:0,missed:0},
+        onboarding:{inbound:0,answered:0,missed:0}, risk:{inbound:0,answered:0,missed:0},
+        credit:{inbound:0,answered:0,missed:0}, secondline:{inbound:0,answered:0,missed:0} };
+      const rawRows = globalData.rawCallsRows || [];
+      if (rawRows.length > 1) {
+        const rHdrs = rawRows[0].map(h => String(h).trim());
+        const rDir=rHdrs.indexOf('direction'), rStart=rHdrs.indexOf('started_at');
+        const rAns=rHdrs.indexOf('answered_at'), rTeam=rHdrs.indexOf('team_name'), rNum=rHdrs.indexOf('number_id');
+        const { wkStart, wkEnd } = isoWeekToRange(selectedInWeek);
+        const TF = {
+          support:    { t:new Set(['Support']),                                        n:new Set(['286844','286845','286847','286848','192211']) },
+          revered:    { t:new Set(['Support Revered','Support + Revered']),             n:new Set([]) },
+          onboarding: { t:new Set(['Onboarding','Onboarding stage 1 calls']),           n:new Set(['201178']) },
+          risk:       { t:new Set(['Risk and compliance']),                             n:new Set(['1216204']) },
+          credit:     { t:new Set(['Credit Control','Support - Credit Control']),       n:new Set([]) },
+          secondline: { t:new Set(['2nd line (Tech support team)']),                   n:new Set(['326618']) },
+        };
+        for (let i = 1; i < rawRows.length; i++) {
+          const row = rawRows[i];
+          const ts = Number(row[rStart]);
+          if (!ts || ts < wkStart || ts >= wkEnd) continue;
+          if (String(row[rDir]||'').trim() !== 'inbound') continue;
+          const tm = String(row[rTeam]||'').trim(), nm = String(row[rNum]||'').trim();
+          const ans = row[rAns] !== '' && row[rAns] != null;
+          for (const [key, f] of Object.entries(TF)) {
+            if (f.t.has(tm) || f.n.has(nm)) {
+              rawInByTeam[key].inbound++;
+              if (ans) rawInByTeam[key].answered++; else rawInByTeam[key].missed++;
+              break;
+            }
+          }
+        }
+      }
 
-        let outbound = Number(outF['Outbound calls']) || 0;
-        let connOut  = Number(outF['Outbound calls (connected calls > x sec)']) || 0;
-        let outTalkTime = String(outF['Outbound in-call time (connected calls > x sec)'] || '');
+      return teamDefs.map(def => {
+        const inF  = def.inR.find(r => Number(r['Week of the year']) === selectedInWeek) || null;
+        const outF = def.outR.find(r => Number(r['Week of the year']) === selectedInWeek) || null;
+
+        const raw = rawInByTeam[def.key] || { inbound:0, answered:0, missed:0 };
+        const inbound   = inF ? (Number(inF['Inbound calls'])  || 0)   : raw.inbound;
+        const answered  = inF ? (Number(inF['Answered inbound']) || 0)  : raw.answered;
+        const missed    = inF ? (Number(inF['Unanswered inbound calls']) || 0) : raw.missed;
+        const answerPct = inF
+          ? (parseFloat(inF['Percentage of answered inbound calls']) || 0) * 100
+          : (inbound > 0 ? answered / inbound * 100 : 0);
+        const inTalkTime = inF ? String(inF['Inbound in-call time'] || '') : '';
+
+        let outbound    = outF ? (Number(outF['Outbound calls']) || 0) : 0;
+        let connOut     = outF ? (Number(outF['Outbound calls (connected calls > x sec)']) || 0) : 0;
+        let outTalkTime = outF ? String(outF['Outbound in-call time (connected calls > x sec)'] || '') : '';
 
         if (def.key === 'secondline') {
           outbound = 0; connOut = 0;
@@ -781,12 +826,8 @@ async function loadDashboard() {
         const connPct = outbound > 0 ? connOut / outbound * 100 : 0;
         return {
           key: def.key, label: def.label,
-          inbound:   Number(inF['Inbound calls'])  || 0,
-          answered:  Number(inF['Answered inbound']) || 0,
-          answerPct: (parseFloat(inF['Percentage of answered inbound calls']) || 0) * 100,
-          inTalkTime: String(inF['Inbound in-call time'] || ''),
-          outbound, connOut, connPct, outTalkTime,
-          missed:    Number(inF['Unanswered inbound calls']) || 0,
+          inbound, answered, answerPct, inTalkTime,
+          outbound, connOut, connPct, outTalkTime, missed,
         };
       });
     }
