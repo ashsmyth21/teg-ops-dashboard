@@ -94,17 +94,27 @@ td.l{text-align:left}
 /* AI Summary tooltip */
 .ai-tooltip{
   position:fixed;z-index:9999;
-  background:#1e2433;color:#e8eaf0;
-  border-radius:10px;padding:12px 14px;
-  max-width:320px;font-size:12px;line-height:1.55;
-  box-shadow:0 8px 32px rgba(0,0,0,.28);
+  background:linear-gradient(135deg,#1a1f2e 0%,#1e2540 100%);
+  color:#e8edf8;
+  border-radius:12px;padding:14px 16px;
+  max-width:340px;font-size:12.5px;line-height:1.6;
+  box-shadow:0 12px 40px rgba(0,0,0,.38),0 0 0 1px rgba(99,130,255,.18);
   pointer-events:none;opacity:0;
-  transition:opacity .15s;
+  transition:opacity .18s ease;
 }
 .ai-tooltip.visible{opacity:1}
-.ai-tooltip-label{font-size:9px;font-weight:600;color:#6b7a99;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+.ai-tooltip-label{
+  display:flex;align-items:center;gap:5px;
+  font-size:9.5px;font-weight:700;
+  color:#8b9fd4;text-transform:uppercase;letter-spacing:.1em;
+  margin-bottom:8px;padding-bottom:7px;
+  border-bottom:1px solid rgba(99,130,255,.2);
+}
+.ai-tooltip-label::before{
+  content:'✦';font-size:8px;color:#7c6af7;
+}
 tr.has-summary{cursor:pointer}
-tr.has-summary:hover td{background:#f8faff}
+tr.has-summary:hover td{background:#f5f7ff}
 
 /* Sticky Agent + Team columns */
 thead th{position:sticky;top:0;z-index:3;background:var(--surface)}
@@ -339,9 +349,6 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
       <button class="tab" data-team="secondline">2nd line</button>
     </div>
     <div class="card" style="margin-bottom:12px"><div id="outHeatmap" class="heat-grid"></div></div>
-
-    <div class="section-wrap"><div class="section-label">AI coaching summaries</div><button class="info-btn" data-tip="AI-generated coaching notes for each agent, pulled from the ai summaries sheet." data-update="Updated weekly">i</button></div>
-    <div id="coachingGrid" class="coaching-grid"></div>
 
     <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
     <div id="weekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
@@ -1396,7 +1403,6 @@ function renderDashboard() {
 
   renderHeatmap(currentHeatTeam);
   renderAgents(currentAgentTeam);
-  renderAICoaching();
   renderTrendChart();
 
   // Show AI brief panel
