@@ -559,6 +559,10 @@ async function readSheetRaw(sheetName) {
 // ============================================================
 // ISO WEEK HELPER
 // ============================================================
+function getLatestDataWeek() {
+  const wks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
+  return wks.length ? Number(wks[wks.length-1]) : getCurrentISOWeek();
+}
 function getCurrentISOWeek() {
   const date = new Date();
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -1099,9 +1103,7 @@ function renderDashboard() {
     const iUser  = hdrs.indexOf('user_name');
     const agentTeamMap = globalData.agentTeamMap || {};
 
-    const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-    const latestWk = Number(allWeeks[allWeeks.length-1]);
-    const selWk = (!week||week==='latest') ? getCurrentISOWeek() : Number(week);
+    const selWk = (!week||week==='latest') ? getLatestDataWeek() : Number(week);
     const { wkStart, wkEnd } = isoWeekToRange(selWk);
 
     let inbound=0, outbound=0, missed=0;
@@ -1208,7 +1210,7 @@ function renderDashboard() {
     const inF = DAY_TEAM_INBOUND[tf] || DAY_TEAM_INBOUND['all'];
     const outF = DAY_TEAM_OUTBOUND[tf] || DAY_TEAM_OUTBOUND['all'];
 
-    const selWk = (!week||week==='latest') ? getCurrentISOWeek() : Number(week);
+    const selWk = (!week||week==='latest') ? getLatestDataWeek() : Number(week);
     const { wkStart, wkEnd } = isoWeekToRange(selWk);
 
     const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -1531,8 +1533,7 @@ function buildHeatmapsForWeek(week) {
   const rawCallsRows = globalData.rawCallsRows;
   if (!rawCallsRows || rawCallsRows.length < 2) return;
 
-  const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
-  const selectedWeek = (!week || week === 'latest') ? getCurrentISOWeek() : Number(week);
+  const selectedWeek = (!week || week === 'latest') ? getLatestDataWeek() : Number(week);
 
   const { wkStart: weekStartSec, wkEnd: weekEndSec } = isoWeekToRange(selectedWeek);
 
@@ -1601,7 +1602,7 @@ function buildOutboundHeatmapsForWeek(week) {
   const rawCallsRows = globalData.rawCallsRows;
   if (!rawCallsRows || rawCallsRows.length < 2) return;
 
-  const selectedWeek = (!week || week === 'latest') ? getCurrentISOWeek() : Number(week);
+  const selectedWeek = (!week || week === 'latest') ? getLatestDataWeek() : Number(week);
 
   const { wkStart: weekStartSec, wkEnd: weekEndSec } = isoWeekToRange(selectedWeek);
 
