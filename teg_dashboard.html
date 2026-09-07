@@ -605,6 +605,37 @@ async function readSheetRawLarge(sheetName) {
   } catch(e) { console.error('readSheetRawLarge error', sheetName, e); return []; }
 }
 
+async function readSheetLarge(sheetName) {
+  try {
+    const token = await getToken();
+    if (!token) return [];
+    const base = await getFileEndpoint();
+    const enc = encodeURIComponent(sheetName);
+    const h = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' };
+    const dimResp = await fetch(`${base}/workbook/worksheets('${enc}')/usedRange?$select=rowCount,columnCount`, { headers: h });
+    if (!dimResp.ok) return [];
+    const { rowCount, columnCount } = await dimResp.json();
+    if (!rowCount || !columnCount) return [];
+    const endCol = _colNumToLetter(columnCount);
+    const CHUNK = 5000;
+    const allRows = [];
+    for (let r = 1; r <= rowCount; r += CHUNK) {
+      const endRow = Math.min(r + CHUNK - 1, rowCount);
+      const resp = await fetch(`${base}/workbook/worksheets('${enc}')/range(address='A${r}:${endCol}${endRow}')?$select=values`, { headers: h });
+      if (!resp.ok) { console.error('readSheetLarge chunk error', sheetName, r, resp.status); break; }
+      const d = await resp.json();
+      if (d.values) allRows.push(...d.values);
+    }
+    if (allRows.length < 2) return [];
+    const headers = allRows[0];
+    return allRows.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((hd, i) => { obj[String(hd)] = row[i]; });
+      return obj;
+    });
+  } catch(e) { console.error('readSheetLarge error', sheetName, e); return []; }
+}
+
 // ============================================================
 // ISO WEEK HELPER
 // ============================================================
@@ -704,16 +735,16 @@ async function loadDashboard() {
       readSheet('ai summaries'),
       readSheet('call back data'),
       readSheet('cfg_agents '),
-      readSheet('Support data inbound'),
-      readSheet('Support outbound'),
-      readSheet('Revered data inbound'),
-      readSheet('Revered data outbound'),
-      readSheet('Onboparding data inbound'),
-      readSheet('Onboparding data outbound'),
-      readSheet('Risk data inbound'),
-      readSheet('Risk data outbound'),
-      readSheet('Credit control inbound'),
-      readSheet('Credit control outbound'),
+      readSheetLarge('Support data inbound'),
+      readSheetLarge('Support outbound'),
+      readSheetLarge('Revered data inbound'),
+      readSheetLarge('Revered data outbound'),
+      readSheetLarge('Onboparding data inbound'),
+      readSheetLarge('Onboparding data outbound'),
+      readSheetLarge('Risk data inbound'),
+      readSheetLarge('Risk data outbound'),
+      readSheetLarge('Credit control inbound'),
+      readSheetLarge('Credit control outbound'),
       readSheet('Key accounts inbound'),
       readSheet('Key accounts outbound'),
       readSheet('Smartbook inbound'),
