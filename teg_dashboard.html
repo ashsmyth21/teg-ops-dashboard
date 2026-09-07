@@ -140,6 +140,71 @@ thead th.col-team {
 .hide-team td.col-agent {
   left: 0;
 }
+
+/* AI Brief panel */
+.ai-brief{background:#1e2433;border-radius:10px;padding:16px 20px;margin-bottom:12px;border:1px solid #2d3548}
+.ai-brief-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.ai-brief-label{font-size:9px;font-weight:700;color:#6b7a99;text-transform:uppercase;letter-spacing:.1em;display:flex;align-items:center;gap:6px}
+.ai-brief-label svg{opacity:.7}
+.ai-brief-text{font-size:13px;color:#d1d5db;line-height:1.6}
+.ai-brief-loading{color:#6b7a99;font-size:12px;display:flex;align-items:center;gap:6px}
+.ai-generate-btn{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;transition:opacity .15s}
+.ai-generate-btn:hover{opacity:.85}
+.ai-generate-btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* Delta badges */
+.delta{font-size:10px;font-weight:600;padding:1px 4px;border-radius:3px;margin-left:4px}
+.delta.up{background:#f0fdf4;color:#15803d}
+.delta.down{background:#fef2f2;color:#dc2626}
+.delta.flat{background:#f3f4f6;color:#6b7280}
+
+/* Trend chart */
+.trend-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px}
+.trend-wrap{position:relative;height:180px}
+
+/* Settings modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:12px;padding:24px;width:420px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal h2{font-size:14px;font-weight:600;margin-bottom:4px}
+.modal p{font-size:11px;color:var(--muted);margin-bottom:16px}
+.modal label{font-size:11px;font-weight:500;display:block;margin-bottom:4px}
+.modal input[type=text]{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;font-family:monospace;margin-bottom:14px}
+.modal input[type=text]:focus{outline:none;border-color:var(--blue-mid)}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.btn-secondary{background:none;border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer}
+.btn-primary{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer}
+.settings-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--muted);font-size:14px;line-height:1}
+.settings-btn:hover{background:var(--bg)}
+
+/* Agent search + export bar */
+.agent-controls{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.agent-search{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;min-width:180px;color:var(--text);background:var(--surface)}
+.agent-search:focus{outline:none;border-color:var(--blue-mid)}
+.export-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--muted)}
+.export-btn:hover{background:var(--bg)}
+
+/* Sortable column headers */
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:var(--blue)}
+th.sortable::after{content:' ↕';font-size:8px;opacity:.4}
+th.sort-asc::after{content:' ↑';opacity:1;color:var(--blue)}
+th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
+
+/* AI coaching section */
+.coaching-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-bottom:12px}
+.coaching-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.coaching-agent{font-size:11px;font-weight:600;margin-bottom:2px}
+.coaching-team{font-size:10px;margin-bottom:8px}
+.coaching-text{font-size:11px;color:var(--muted);line-height:1.55}
+
+/* Spinner small */
+.spin-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+
+/* API key indicator */
+.key-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px}
+.key-dot.set{background:#15803d}
+.key-dot.unset{background:#dc2626}
 </style>
 </head>
 <body>
@@ -158,10 +223,23 @@ thead th.col-team {
     <div class="topbar-right">
       <span id="lastUpdated">—</span>
       <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
+      <button class="settings-btn" onclick="openSettings()" title="Settings">⚙</button>
     </div>
   </div>
 
   <div class="dash">
+    <!-- AI Weekly Brief -->
+    <div id="aiBriefPanel" class="ai-brief" style="display:none">
+      <div class="ai-brief-header">
+        <div class="ai-brief-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" stroke-width="2"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+          AI Weekly Brief
+        </div>
+        <button id="aiBriefBtn" class="ai-generate-btn" onclick="generateAIBrief()">✦ Generate</button>
+      </div>
+      <div id="aiBriefText" class="ai-brief-text" style="color:#6b7a99;font-size:12px">Click Generate to create an AI-powered performance summary for this week. Set your Anthropic API key in ⚙ Settings.</div>
+    </div>
+
     <div id="overviewWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
       <div class="tabs" id="overviewWeekTabs" style="margin-bottom:0">
@@ -202,6 +280,9 @@ thead th.col-team {
       </div>
     </div>
     <div id="teamGrid" class="team-grid"></div>
+
+    <div class="section-wrap"><div class="section-label">Answer rate trend — last 8 weeks</div><button class="info-btn" data-tip="Inbound answer rate per team plotted week-on-week." data-update="Live from agent stats sheet">i</button></div>
+    <div class="trend-card"><div class="trend-wrap"><canvas id="trendChart"></canvas></div></div>
 
     <div class="two-col">
       <div>
@@ -259,6 +340,9 @@ thead th.col-team {
     </div>
     <div class="card" style="margin-bottom:12px"><div id="outHeatmap" class="heat-grid"></div></div>
 
+    <div class="section-wrap"><div class="section-label">AI coaching summaries</div><button class="info-btn" data-tip="AI-generated coaching notes for each agent, pulled from the ai summaries sheet." data-update="Updated weekly">i</button></div>
+    <div id="coachingGrid" class="coaching-grid"></div>
+
     <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
     <div id="weekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
@@ -271,6 +355,10 @@ thead th.col-team {
         <input type="date" id="customTo" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:5px;color:var(--text)">
         <button onclick="applyCustomWeek()" style="font-size:11px;padding:3px 10px;border:1px solid var(--blue);border-radius:5px;background:var(--blue);color:#fff;cursor:pointer">Apply</button>
       </div>
+    </div>
+    <div class="agent-controls">
+      <input type="text" class="agent-search" id="agentSearch" placeholder="Search agent…" oninput="filterAgentTable(this.value)">
+      <button class="export-btn" onclick="exportAgentsCSV()">⬇ Export CSV</button>
     </div>
     <div class="tabs" id="agentTabs">
       <button class="tab active" data-team="all">All teams</button>
@@ -293,24 +381,24 @@ thead th.col-team {
             <th colspan="2">Score</th>
           </tr>
           <tr>
-            <th style="color:var(--blue)">Available</th>
-            <th style="color:var(--blue)">In talk (in)</th>
-            <th style="color:var(--blue)">In talk (out)</th>
-            <th style="color:var(--blue)">ACW</th>
+            <th style="color:var(--blue)" class="sortable" data-col="available" onclick="sortAgentTable('available')">Available</th>
+            <th style="color:var(--blue)" class="sortable" data-col="talk_inbound" onclick="sortAgentTable('talk_inbound')">In talk (in)</th>
+            <th style="color:var(--blue)" class="sortable" data-col="talk_outbound" onclick="sortAgentTable('talk_outbound')">In talk (out)</th>
+            <th style="color:var(--blue)" class="sortable" data-col="after_call_work" onclick="sortAgentTable('after_call_work')">ACW</th>
             <th style="color:var(--blue)">Allowed ACW</th>
-            <th style="color:var(--red)">Excess ACW</th>
+            <th style="color:var(--red)" class="sortable" data-col="excess_acw" onclick="sortAgentTable('excess_acw')">Excess ACW</th>
             <th style="color:var(--green)">Investigation</th>
             <th style="color:var(--blue)">Back office</th>
             <th style="color:var(--credit)">Training</th>
             <th style="color:var(--amber)">Lunch</th>
-            <th style="color:var(--green)">Ans. inbound</th>
-            <th style="color:var(--green)">Conn. outbound</th>
-            <th style="color:var(--green)">Outbound</th>
-            <th style="color:var(--keyaccts)">Internal</th>
-            <th style="color:var(--keyaccts)">Public</th>
-            <th style="color:var(--keyaccts)">Solved</th>
-            <th style="color:var(--blue-mid)">Call %</th>
-            <th style="color:var(--keyaccts)">ZD %</th>
+            <th style="color:var(--green)" class="sortable" data-col="inbound_calls" onclick="sortAgentTable('inbound_calls')">Ans. inbound</th>
+            <th style="color:var(--green)" class="sortable" data-col="outbound_calls" onclick="sortAgentTable('outbound_calls')">Conn. outbound</th>
+            <th style="color:var(--green)" class="sortable" data-col="total_outbound" onclick="sortAgentTable('total_outbound')">Outbound</th>
+            <th style="color:var(--keyaccts)" class="sortable" data-col="zd_internal" onclick="sortAgentTable('zd_internal')">Internal</th>
+            <th style="color:var(--keyaccts)" class="sortable" data-col="zd_public" onclick="sortAgentTable('zd_public')">Public</th>
+            <th style="color:var(--keyaccts)" class="sortable" data-col="zd_solved" onclick="sortAgentTable('zd_solved')">Solved</th>
+            <th style="color:var(--blue-mid)" class="sortable sort-desc" data-col="callUtil" onclick="sortAgentTable('callUtil')">Call %</th>
+            <th style="color:var(--keyaccts)" class="sortable" data-col="zdUtil" onclick="sortAgentTable('zdUtil')">ZD %</th>
           </tr>
         </thead>
         <tbody id="agentBody"></tbody>
@@ -335,6 +423,21 @@ thead th.col-team {
 .cb-day-row td:first-child{padding-left:24px;color:var(--text)}
 .cb-day-row:last-child td{border-bottom:2px solid var(--border)}
 </style>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h2>Settings</h2>
+    <p>Configure AI features for the TEG Ops Dashboard.</p>
+    <label><span class="key-dot" id="keyDot"></span>Anthropic API Key</label>
+    <input type="text" id="apiKeyInput" placeholder="sk-ant-…" autocomplete="off">
+    <p style="font-size:10px;color:var(--subtle);margin-top:-10px;margin-bottom:14px">Stored in your browser only. Used to generate AI Weekly Briefs and coaching summaries on demand.</p>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button class="btn-primary" onclick="saveSettings()">Save</button>
     </div>
   </div>
 </div>
@@ -687,12 +790,7 @@ async function loadDashboard() {
       const allWks3 = [...new Set(agentStatsRows.map(r => r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
       const latestWk3 = Number(allWks3[allWks3.length-1]);
       const selWk3 = currentIsoWk;
-      const jan4c = new Date(Date.UTC(2026,0,4));
-      const jan4Dayc = (jan4c.getUTCDay()+6)%7;
-      const week1Monc = new Date(jan4c.getTime()-jan4Dayc*86400000);
-      const weekMonc = new Date(week1Monc.getTime()+(selWk3-1)*7*86400000);
-      const wkStartc = Math.floor(weekMonc.getTime()/1000);
-      const wkEndc   = wkStartc + 7*86400;
+      const { wkStart: wkStartc, wkEnd: wkEndc } = isoWeekToRange(selWk3);
       for (let i = 1; i < rawCallsRows.length; i++) {
         const row = rawCallsRows[i];
         const ts = Number(row[rcSt]);
@@ -721,12 +819,7 @@ async function loadDashboard() {
       const rEnd   = rHdrs.indexOf('ended_at');
       const rUser  = rHdrs.indexOf('user_name');
       const selWk2 = currentIsoWk;
-      const jan4b = new Date(Date.UTC(2026,0,4));
-      const jan4Dayb = (jan4b.getUTCDay()+6)%7;
-      const week1Monb = new Date(jan4b.getTime()-jan4Dayb*86400000);
-      const weekMonb = new Date(week1Monb.getTime()+(selWk2-1)*7*86400000);
-      const wkStartb = Math.floor(weekMonb.getTime()/1000);
-      const wkEndb   = wkStartb + 7*86400;
+      const { wkStart: wkStartb, wkEnd: wkEndb } = isoWeekToRange(selWk2);
       for (let i = 1; i < rawCallsRows.length; i++) {
         const row = rawCallsRows[i];
         const ts = Number(row[rStart]);
@@ -1009,12 +1102,7 @@ function renderDashboard() {
     const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
     const latestWk = Number(allWeeks[allWeeks.length-1]);
     const selWk = (!week||week==='latest') ? getCurrentISOWeek() : Number(week);
-    const jan4 = new Date(Date.UTC(2026,0,4));
-    const jan4Day = (jan4.getUTCDay()+6)%7;
-    const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
-    const weekMon = new Date(week1Mon.getTime()+(selWk-1)*7*86400000);
-    const wkStart = Math.floor(weekMon.getTime()/1000);
-    const wkEnd   = wkStart + 7*86400;
+    const { wkStart, wkEnd } = isoWeekToRange(selWk);
 
     let inbound=0, outbound=0, missed=0;
     for (let i = 1; i < rawRows.length; i++) {
@@ -1121,12 +1209,7 @@ function renderDashboard() {
     const outF = DAY_TEAM_OUTBOUND[tf] || DAY_TEAM_OUTBOUND['all'];
 
     const selWk = (!week||week==='latest') ? getCurrentISOWeek() : Number(week);
-    const jan4 = new Date(Date.UTC(2026,0,4));
-    const jan4Day = (jan4.getUTCDay()+6)%7;
-    const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
-    const weekMon = new Date(week1Mon.getTime()+(selWk-1)*7*86400000);
-    const wkStart = Math.floor(weekMon.getTime()/1000);
-    const wkEnd   = wkStart + 7*86400;
+    const { wkStart, wkEnd } = isoWeekToRange(selWk);
 
     const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
     const dd = { inbound:{}, outbound:{}, missed:{} };
@@ -1270,6 +1353,12 @@ function renderDashboard() {
 
   renderHeatmap(currentHeatTeam);
   renderAgents(currentAgentTeam);
+  renderAICoaching();
+  renderTrendChart();
+
+  // Show AI brief panel
+  document.getElementById('aiBriefPanel').style.display = 'block';
+  updateKeyDot();
 
   const cbByWeek = {};
   cbRows.forEach(r => {
@@ -1445,12 +1534,7 @@ function buildHeatmapsForWeek(week) {
   const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
   const selectedWeek = (!week || week === 'latest') ? getCurrentISOWeek() : Number(week);
 
-  const jan4 = new Date(Date.UTC(2026, 0, 4));
-  const jan4Day = (jan4.getUTCDay() + 6) % 7;
-  const week1Mon = new Date(jan4.getTime() - jan4Day * 86400000);
-  const weekMon = new Date(week1Mon.getTime() + (selectedWeek - 1) * 7 * 86400000);
-  const weekStartSec = Math.floor(weekMon.getTime() / 1000);
-  const weekEndSec   = weekStartSec + 7 * 86400;
+  const { wkStart: weekStartSec, wkEnd: weekEndSec } = isoWeekToRange(selectedWeek);
 
   const HOURS = [8,9,10,11,12,13,14,15,16,17];
   const DAYS  = ['Mon','Tue','Wed','Thu','Fri'];
@@ -1519,12 +1603,7 @@ function buildOutboundHeatmapsForWeek(week) {
 
   const selectedWeek = (!week || week === 'latest') ? getCurrentISOWeek() : Number(week);
 
-  const jan4 = new Date(Date.UTC(2026, 0, 4));
-  const jan4Day = (jan4.getUTCDay() + 6) % 7;
-  const week1Mon = new Date(jan4.getTime() - jan4Day * 86400000);
-  const weekMon = new Date(week1Mon.getTime() + (selectedWeek - 1) * 7 * 86400000);
-  const weekStartSec = Math.floor(weekMon.getTime() / 1000);
-  const weekEndSec   = weekStartSec + 7 * 86400;
+  const { wkStart: weekStartSec, wkEnd: weekEndSec } = isoWeekToRange(selectedWeek);
 
   const HOURS = [8,9,10,11,12,13,14,15,16,17];
   const DAYS  = ['Mon','Tue','Wed','Thu','Fri'];
@@ -1717,12 +1796,7 @@ function buildAgentsForWeek(week) {
     const rAns   = rHdrs.indexOf('answered_at');
     const rEnd   = rHdrs.indexOf('ended_at');
     const rUser  = rHdrs.indexOf('user_name');
-    const jan4 = new Date(Date.UTC(2026,0,4));
-    const jan4Day = (jan4.getUTCDay()+6)%7;
-    const week1Mon = new Date(jan4.getTime()-jan4Day*86400000);
-    const weekMon = new Date(week1Mon.getTime()+(selectedDataWeek-1)*7*86400000);
-    const wkStart = Math.floor(weekMon.getTime()/1000);
-    const wkEnd   = wkStart + 7*86400;
+    const { wkStart, wkEnd } = isoWeekToRange(selectedDataWeek);
     for (let i = 1; i < rawRows.length; i++) {
       const row = rawRows[i];
       const ts = Number(row[rStart]);
@@ -1749,12 +1823,7 @@ function buildAgentsForWeek(week) {
     const rUser2 = rHdrs2.indexOf('user_name');
     const rDur2  = rHdrs2.indexOf('duration');
     const rStart2 = rHdrs2.indexOf('started_at');
-    const jan4c = new Date(Date.UTC(2026,0,4));
-    const jan4Dayc = (jan4c.getUTCDay()+6)%7;
-    const week1Monc = new Date(jan4c.getTime()-jan4Dayc*86400000);
-    const weekMonc = new Date(week1Monc.getTime()+(selectedDataWeek-1)*7*86400000);
-    const wkStartc = Math.floor(weekMonc.getTime()/1000);
-    const wkEndc   = wkStartc + 7*86400;
+    const { wkStart: wkStartc, wkEnd: wkEndc } = isoWeekToRange(selectedDataWeek);
     for (let i = 1; i < rawRows.length; i++) {
       const row = rawRows[i];
       const ts = Number(row[rStart2]);
@@ -1832,8 +1901,6 @@ function buildAgentsForWeek(week) {
 
 function renderAgents(team) {
   const agents = buildAgentsForWeek(currentWeek);
-
-  const allWeeks = [...new Set((globalData.agentStatsRows||[]).map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
   document.getElementById('weekBadge').textContent = 'Week ' + getCurrentISOWeek();
 
   const table = document.getElementById('agentTable');
@@ -1843,53 +1910,60 @@ function renderAgents(team) {
     ? agents.filter(a => DASHBOARD_TEAMS.has(a.team))
     : agents.filter(a => a.team === team);
   const seen = {};
-  const rows = list.filter(a => { if(seen[a.name]) return false; seen[a.name]=true; return true; });
-
-  document.getElementById('agentBody').innerHTML = rows.map(a => {
-    const tc = TEAM_COLORS[a.team]||'#888';
-    const sh = TEAM_SHORT[a.team]||a.team;
-    const cs = scoreStyle(a.callUtil);
-    const zs = scoreStyle(a.zdUtil);
-    const exCell = a.excess_acw>0
-      ? `<td style="color:var(--red)">${fmtHrs(a.excess_acw)}<span class="excess-pill">−${fmtHrs(a.excess_acw)}</span></td>`
-      : '<td class="muted">—</td>';
-    const ls = a.out_for_lunch||0;
-    const lh = Math.floor(ls/3600); const lm = Math.floor((ls%3600)/60);
-    const lDisp = ls>0 ? (lh>0 ? `${lh}h ${lm}m` : `${lm}m`) : '—';
-    const lCell = `<td style="color:var(--amber)">${lDisp} ${lunchFlag(ls,a.partWeek)}</td>`;
-    const cv = a.cv; const zd = a.zd;
-    const cvC = `<td>${dv(a.inbound_calls)}</td><td>${dv(a.outbound_calls)}</td><td>${dv(a.total_outbound)}</td>`;
-    const ttIn  = a.talk_inbound  > 0 ? fmtHrs(a.talk_inbound)  : '—';
-    const ttOut = a.talk_outbound > 0 ? fmtHrs(a.talk_outbound) : '—';
-    const zdC = zd
-      ? `<td>${dv(zd.internal)}</td><td>${dv(zd.public)}</td><td style="font-weight:600;color:${zd.solved>0?'var(--keyaccts)':'var(--subtle)'}">${zd.solved||'—'}</td>`
-      : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
-    const hasAi = a.ai ? 'has-summary' : '';
-    return `<tr class="${hasAi}" data-agent="${a.name.replace(/"/g,'&quot;')}">
-      <td class="l col-agent" style="font-weight:500">${a.name}</td>
-      <td class="l col-team"><span class="team-pill" style="background:${tc}18;color:${tc}">${sh}</span></td>
-      <td>${fh(fmtHrs(a.available))}</td>
-      <td>${fh(fmtHrs(a.talk_inbound))}</td>
-      <td>${fh(fmtHrs(a.talk_outbound))}</td>
-      <td>${fh(fmtHrs(a.after_call_work))}</td>
-      <td style="color:var(--subtle);font-size:10px">${fh(fmtHrs(a.allowed_acw))}</td>
-      ${exCell}
-      <td>${fh(fmtHrs(a.investigation))}</td>
-      <td>${fh(fmtHrs(a.doing_back_office))}</td>
-      <td>${fh(fmtHrs(a.in_training))}</td>
-      ${lCell}
-      ${cvC}${zdC}
-      <td><span class="score-pill" style="background:${cs.bg};color:${cs.col}">${a.callUtil}%</span></td>
-      <td><span class="score-pill" style="background:${zs.bg};color:${zs.col}">${a.zdUtil}%</span></td>
-    </tr>`;
-  }).join('');
+  _lastRenderedAgents = list.filter(a => { if(seen[a.name]) return false; seen[a.name]=true; return true; });
+  renderSortedAgents();
 }
 
 // ============================================================
 // CALLBACK EXPAND/COLLAPSE
 // ============================================================
 function applyCustomWeek() {
-  alert('Custom date range coming soon — use the week buttons for now.');
+  const from = document.getElementById('customFrom').value;
+  const to   = document.getElementById('customTo').value;
+  if (!from || !to) { alert('Please select both a start and end date.'); return; }
+  const fromTs = Math.floor(new Date(from).getTime() / 1000);
+  const toTs   = Math.floor(new Date(to).getTime()   / 1000) + 86400;
+  if (fromTs >= toTs) { alert('Start date must be before end date.'); return; }
+
+  currentWeek = '__custom__';
+  globalData._customRange = { wkStart: fromTs, wkEnd: toTs };
+
+  const rawRows = globalData.rawCallsRows;
+  if (!rawRows || rawRows.length < 2) return;
+  const rHdrs = rawRows[0].map(h => String(h).trim());
+  const rDir   = rHdrs.indexOf('direction');
+  const rStart = rHdrs.indexOf('started_at');
+  const rAns   = rHdrs.indexOf('answered_at');
+  const rEnd   = rHdrs.indexOf('ended_at');
+  const rUser  = rHdrs.indexOf('user_name');
+
+  const talkTimeMap = {};
+  const rawCallCounts = {};
+  for (let i = 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    const ts = Number(row[rStart]);
+    if (!ts || ts < fromTs || ts >= toTs) continue;
+    const user = String(row[rUser]||'').trim();
+    if (!user) continue;
+    const dir = String(row[rDir]||'').trim();
+    const ans = row[rAns] !== '' && row[rAns] != null;
+    const dur = Number(rawRows[i][rHdrs.indexOf('duration')]||0);
+    if (!rawCallCounts[user]) rawCallCounts[user] = { answeredInbound:0, connectedOutbound:0, totalOutbound:0 };
+    if (dir === 'inbound' && ans) rawCallCounts[user].answeredInbound++;
+    if (dir === 'outbound') { rawCallCounts[user].totalOutbound++; if (ans && dur >= 10) rawCallCounts[user].connectedOutbound++; }
+    const end = row[rEnd];
+    if (ans && end && end !== '') {
+      const secs = Number(end) - Number(row[rAns]);
+      if (secs > 0) {
+        if (!talkTimeMap[user]) talkTimeMap[user] = { inbound:0, outbound:0 };
+        if (dir === 'inbound')  talkTimeMap[user].inbound  += secs;
+        if (dir === 'outbound') talkTimeMap[user].outbound += secs;
+      }
+    }
+  }
+  globalData._customRawCallCounts = rawCallCounts;
+  globalData._customTalkTimeMap = talkTimeMap;
+  renderAgents(currentAgentTeam);
 }
 
 function toggleCbWeek(wkId, headerRow) {
@@ -1905,8 +1979,8 @@ function toggleCbWeek(wkId, headerRow) {
 function initTooltip() {
   const tooltip = document.getElementById('aiTooltip');
   const tooltipText = document.getElementById('aiTooltipText');
-  const aiMap = {};
-  globalData.agents.forEach(a => { if(a.ai) aiMap[a.name] = a.ai; });
+  const aiMap = globalData.aiMap || {};
+  (globalData.agents||[]).forEach(a => { if(a.ai) aiMap[a.name] = a.ai; });
 
   document.getElementById('agentBody').addEventListener('mouseover', e => {
     const cell = e.target.closest('td.l');
@@ -1931,6 +2005,289 @@ function initTooltip() {
   document.getElementById('agentBody').addEventListener('mouseout', e => {
     tooltip.classList.remove('visible');
   });
+}
+
+// ============================================================
+// ISO WEEK RANGE HELPER (replaces hardcoded 2026)
+// ============================================================
+function isoWeekToRange(weekNum) {
+  const year = new Date().getUTCFullYear();
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = (jan4.getUTCDay() + 6) % 7;
+  const week1Mon = new Date(jan4.getTime() - jan4Day * 86400000);
+  const weekMon = new Date(week1Mon.getTime() + (weekNum - 1) * 7 * 86400000);
+  const wkStart = Math.floor(weekMon.getTime() / 1000);
+  return { wkStart, wkEnd: wkStart + 7 * 86400 };
+}
+
+// ============================================================
+// SETTINGS MODAL
+// ============================================================
+function openSettings() {
+  const key = localStorage.getItem('teg_anthropic_key') || '';
+  document.getElementById('apiKeyInput').value = key;
+  updateKeyDot();
+  document.getElementById('settingsModal').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('open');
+}
+function saveSettings() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (key) localStorage.setItem('teg_anthropic_key', key);
+  else localStorage.removeItem('teg_anthropic_key');
+  updateKeyDot();
+  document.getElementById('settingsModal').classList.remove('open');
+  const panel = document.getElementById('aiBriefPanel');
+  if (panel) panel.style.display = 'block';
+}
+function updateKeyDot() {
+  const dot = document.getElementById('keyDot');
+  if (!dot) return;
+  const has = !!localStorage.getItem('teg_anthropic_key');
+  dot.className = 'key-dot ' + (has ? 'set' : 'unset');
+}
+document.getElementById('settingsModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSettings();
+});
+
+// ============================================================
+// ANTHROPIC AI INTEGRATION
+// ============================================================
+async function callAnthropicAPI(prompt) {
+  const key = localStorage.getItem('teg_anthropic_key');
+  if (!key) throw new Error('No API key set. Open ⚙ Settings to add your Anthropic key.');
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data.content[0].text;
+}
+
+async function generateAIBrief() {
+  const btn = document.getElementById('aiBriefBtn');
+  const textEl = document.getElementById('aiBriefText');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin-sm"></span> Generating…';
+  textEl.style.color = '#6b7a99';
+  textEl.textContent = 'Compiling this week\'s data…';
+
+  try {
+    const { totals, teamSummary, cbRows } = globalData;
+    const wk = getCurrentISOWeek();
+    const cbWeek = (cbRows || []).filter(r => Number(r['Week']) === wk);
+    const cbTotal = cbWeek.reduce((s,r) => s + (Number(r['Callback requests'])||0), 0);
+    const cbBack  = cbWeek.reduce((s,r) => s + (Number(r['Called back'])||0), 0);
+    const cbPct   = cbTotal > 0 ? Math.round(cbBack/cbTotal*100) : null;
+
+    const teamLines = (teamSummary || []).map(t =>
+      `  ${t.label}: ${t.answerPct.toFixed(1)}% answer rate (${t.inbound} inbound), ${t.connPct.toFixed(1)}% outbound connection (${t.outbound} calls)`
+    ).join('\n');
+
+    const prompt = `You are a performance analyst for TEG (Transport Exchange Group), a UK logistics marketplace. Write a concise 3-sentence executive brief about this week's call centre performance. Be factual and direct. Highlight the best result, any concern, and one recommended action.
+
+Week: ${wk}
+Total calls: ${(totals?.total||0).toLocaleString()} (${(totals?.inbound||0).toLocaleString()} inbound, ${(totals?.outbound||0).toLocaleString()} outbound, ${(totals?.missed||0).toLocaleString()} missed)
+${cbTotal > 0 ? `Callbacks: ${cbTotal} requests, ${cbPct}% called back` : ''}
+Team performance:
+${teamLines}
+
+Write 3 sentences only. No headings, no bullet points.`;
+
+    const result = await callAnthropicAPI(prompt);
+    textEl.style.color = '#d1d5db';
+    textEl.textContent = result;
+  } catch(e) {
+    textEl.style.color = '#f87171';
+    textEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '✦ Regenerate';
+  }
+}
+
+// ============================================================
+// AI COACHING PANEL
+// ============================================================
+function renderAICoaching() {
+  const aiMap = globalData.aiMap || {};
+  const entries = Object.entries(aiMap).filter(([,v]) => v && String(v).trim().length > 10);
+  const grid = document.getElementById('coachingGrid');
+  if (!grid) return;
+  if (!entries.length) {
+    grid.innerHTML = '<p style="color:var(--subtle);font-size:11px">No AI summaries available in the spreadsheet yet.</p>';
+    return;
+  }
+  const agentTeamMap = globalData.agentTeamMap || {};
+  grid.innerHTML = entries.map(([name, summary]) => {
+    const team = agentTeamMap[name] || '';
+    const tc = TEAM_COLORS[team] || '#888';
+    const sh = TEAM_SHORT[team] || team;
+    return `<div class="coaching-card">
+      <div class="coaching-agent">${name}</div>
+      <div class="coaching-team"><span class="team-pill" style="background:${tc}18;color:${tc}">${sh||'Unknown'}</span></div>
+      <div class="coaching-text">${String(summary).trim()}</div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// WEEK-ON-WEEK TREND CHART
+// ============================================================
+function renderTrendChart() {
+  const { agentStatsRows, teamDefs, buildTeamSummary } = globalData;
+  if (!agentStatsRows || !buildTeamSummary) return;
+  const allWeeks = [...new Set(agentStatsRows.map(r => r['Week']).filter(w => w))].sort((a,b) => Number(a)-Number(b));
+  const showWeeks = allWeeks.slice(-8);
+  if (showWeeks.length < 2) return;
+
+  const teams = [
+    { key:'support', label:'Support', color:'#3b82f6' },
+    { key:'revered', label:'Revered', color:'#0e7490' },
+    { key:'onboarding', label:'Onboarding', color:'#15803d' },
+    { key:'risk', label:'Risk', color:'#b45309' },
+    { key:'credit', label:'Credit ctrl', color:'#7c3aed' },
+  ];
+
+  const datasets = teams.map(t => ({
+    label: t.label,
+    data: showWeeks.map(wk => {
+      const summary = buildTeamSummary(String(wk));
+      const row = summary.find(s => s.key === t.key);
+      return row ? Math.round(row.answerPct * 10) / 10 : null;
+    }),
+    borderColor: t.color,
+    backgroundColor: t.color + '20',
+    borderWidth: 2,
+    pointRadius: 3,
+    tension: 0.3,
+    spanGaps: true,
+  }));
+
+  if (charts.trend) charts.trend.destroy();
+  charts.trend = new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: { labels: showWeeks.map(w => 'Wk ' + w), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { min: 0, max: 100, ticks: { callback: v => v + '%', font: { size: 10 } }, grid: { color: 'rgba(0,0,0,.05)' } },
+      },
+    },
+  });
+}
+
+// ============================================================
+// AGENT TABLE SORT, SEARCH, EXPORT
+// ============================================================
+let _agentSortCol = 'callUtil';
+let _agentSortDir = -1;
+let _lastRenderedAgents = [];
+
+function sortAgentTable(col) {
+  if (_agentSortCol === col) _agentSortDir *= -1;
+  else { _agentSortCol = col; _agentSortDir = -1; }
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (th.dataset.col === col) th.classList.add(_agentSortDir === -1 ? 'sort-desc' : 'sort-asc');
+  });
+  renderSortedAgents();
+}
+
+function getAgentVal(a, col) {
+  if (col === 'zd_internal') return a.zd ? a.zd.internal : 0;
+  if (col === 'zd_public')   return a.zd ? a.zd.public   : 0;
+  if (col === 'zd_solved')   return a.zd ? a.zd.solved    : 0;
+  if (col === 'excess_acw')  return a.excess_acw || 0;
+  return a[col] || 0;
+}
+
+function renderSortedAgents() {
+  const query = (document.getElementById('agentSearch')?.value || '').toLowerCase();
+  let list = _lastRenderedAgents.filter(a => !query || a.name.toLowerCase().includes(query) || (a.team||'').toLowerCase().includes(query));
+  list = [...list].sort((a,b) => _agentSortDir * (getAgentVal(b,_agentSortCol) - getAgentVal(a,_agentSortCol)));
+  document.getElementById('agentBody').innerHTML = list.map(a => buildAgentRow(a)).join('');
+}
+
+function filterAgentTable(q) {
+  renderSortedAgents();
+}
+
+function buildAgentRow(a) {
+  const tc = TEAM_COLORS[a.team]||'#888';
+  const sh = TEAM_SHORT[a.team]||a.team;
+  const cs = scoreStyle(a.callUtil);
+  const zs = scoreStyle(a.zdUtil);
+  const exCell = a.excess_acw>0
+    ? `<td style="color:var(--red)">${fmtHrs(a.excess_acw)}<span class="excess-pill">−${fmtHrs(a.excess_acw)}</span></td>`
+    : '<td class="muted">—</td>';
+  const ls = a.out_for_lunch||0;
+  const lh = Math.floor(ls/3600); const lm = Math.floor((ls%3600)/60);
+  const lDisp = ls>0 ? (lh>0 ? `${lh}h ${lm}m` : `${lm}m`) : '—';
+  const lCell = `<td style="color:var(--amber)">${lDisp} ${lunchFlag(ls,a.partWeek)}</td>`;
+  const cvC = `<td>${dv(a.inbound_calls)}</td><td>${dv(a.outbound_calls)}</td><td>${dv(a.total_outbound)}</td>`;
+  const zdC = a.zd
+    ? `<td>${dv(a.zd.internal)}</td><td>${dv(a.zd.public)}</td><td style="font-weight:600;color:${a.zd.solved>0?'var(--keyaccts)':'var(--subtle)'}">${a.zd.solved||'—'}</td>`
+    : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>';
+  const hasAi = a.ai ? 'has-summary' : '';
+  return `<tr class="${hasAi}" data-agent="${a.name.replace(/"/g,'&quot;')}">
+    <td class="l col-agent" style="font-weight:500">${a.name}</td>
+    <td class="l col-team"><span class="team-pill" style="background:${tc}18;color:${tc}">${sh}</span></td>
+    <td>${fh(fmtHrs(a.available))}</td>
+    <td>${fh(fmtHrs(a.talk_inbound))}</td>
+    <td>${fh(fmtHrs(a.talk_outbound))}</td>
+    <td>${fh(fmtHrs(a.after_call_work))}</td>
+    <td style="color:var(--subtle);font-size:10px">${fh(fmtHrs(a.allowed_acw))}</td>
+    ${exCell}
+    <td>${fh(fmtHrs(a.investigation))}</td>
+    <td>${fh(fmtHrs(a.doing_back_office))}</td>
+    <td>${fh(fmtHrs(a.in_training))}</td>
+    ${lCell}
+    ${cvC}${zdC}
+    <td><span class="score-pill" style="background:${cs.bg};color:${cs.col}">${a.callUtil}%</span></td>
+    <td><span class="score-pill" style="background:${zs.bg};color:${zs.col}">${a.zdUtil}%</span></td>
+  </tr>`;
+}
+
+function exportAgentsCSV() {
+  const agents = _lastRenderedAgents;
+  if (!agents.length) return;
+  const headers = ['Agent','Team','Available','Talk In','Talk Out','ACW','Excess ACW','Inv','Back Office','Training','Lunch','Ans Inbound','Conn Outbound','Total Outbound','ZD Internal','ZD Public','ZD Solved','Call %','ZD %'];
+  const rows = agents.map(a => [
+    a.name, a.team,
+    Math.round((a.available||0)/60), Math.round((a.talk_inbound||0)/60), Math.round((a.talk_outbound||0)/60),
+    Math.round((a.after_call_work||0)/60), Math.round((a.excess_acw||0)/60),
+    Math.round((a.investigation||0)/60), Math.round((a.doing_back_office||0)/60), Math.round((a.in_training||0)/60),
+    Math.round((a.out_for_lunch||0)/60),
+    a.inbound_calls||0, a.outbound_calls||0, a.total_outbound||0,
+    a.zd?.internal||0, a.zd?.public||0, a.zd?.solved||0,
+    a.callUtil||0, a.zdUtil||0,
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = `TEG_agents_wk${getCurrentISOWeek()}.csv`;
+  a.click();
 }
 
 // ============================================================
