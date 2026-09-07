@@ -1531,7 +1531,6 @@ function renderDashboard() {
   document.getElementById('aiBriefPanel').style.display = 'block';
   updateKeyDot();
 
-  if (cbRows.length > 0) console.log('[CB columns]', Object.keys(cbRows[0]));
   const cbByWeek = {};
   cbRows.forEach(r => {
     const week = r['Week'] || r['week 22'];
