@@ -550,7 +550,7 @@ async function readSheetRaw(sheetName) {
     const base = await getFileEndpoint();
     const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
     const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
-    if (!resp.ok) { console.error('Sheet error (raw)', sheetName, resp.status); return []; }
+    if (!resp.ok) { const errTxt = await resp.text(); console.error('Sheet error (raw)', sheetName, resp.status, errTxt); return []; }
     const data = await resp.json();
     return data.values || [];
   } catch(e) { console.error('readSheetRaw error', sheetName, e); return []; }
