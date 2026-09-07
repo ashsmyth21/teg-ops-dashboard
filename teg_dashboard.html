@@ -1029,11 +1029,45 @@ async function loadDashboard() {
       const _rkOut = parseOutboundRaw(globalData.riskOut     || riskOut);
       const _cOut  = parseOutboundRaw(globalData.creditOut   || creditOut);
 
+      const allSheetWks = [..._sOut, ..._rOut, ..._oOut, ..._rkOut, ..._cOut].map(r=>r.wk).filter(w=>w>0);
+      const latestSheetWk = allSheetWks.length ? Math.max(...allSheetWks) : 0;
+
       function getRow(parsed) {
-        if (!parsed.length) return { wk:0, total:0, conn:0, time:'' };
-        const wks = parsed.map(r => r.wk).sort((a,b) => a-b);
-        const selWk = (!week || week === 'latest') ? wks[wks.length-1] : Number(week);
-        return parsed.find(r => r.wk === selWk) || { wk:0, total:0, conn:0, time:'' };
+        if (!parsed.length) return null;
+        const selWk = (!week || week === 'latest') ? latestSheetWk : Number(week);
+        return parsed.find(r => r.wk === selWk) || null;
+      }
+
+      // Raw-calls fallback: outbound counts per team-key for the selected week
+      const selWkNum = (!week || week === 'latest') ? getLatestDataWeek() : Number(week);
+      const rawOut = { supportrev:{total:0,conn:0}, onboarding:{total:0,conn:0}, risk:{total:0,conn:0}, credit:{total:0,conn:0}, secondline:{total:0,conn:0} };
+      const rcRows = globalData.rawCallsRows || [];
+      if (rcRows.length > 1) {
+        const rh = rcRows[0].map(h=>String(h).trim());
+        const rDir=rh.indexOf('direction'), rStart=rh.indexOf('started_at'), rAns=rh.indexOf('answered_at');
+        const rUser=rh.indexOf('user_name'), rDur=rh.indexOf('duration');
+        const { wkStart, wkEnd } = isoWeekToRange(selWkNum);
+        const agMap = globalData.agentTeamMap || {};
+        const KEY_MAP = {
+          'Support':'supportrev','Support Revered':'supportrev','Support + Revered':'supportrev',
+          'Onboarding':'onboarding','Onboarding stage 1 calls':'onboarding',
+          'Risk and compliance':'risk',
+          'Credit Control':'credit','Support - Credit Control':'credit',
+          '2nd line (Tech support team)':'secondline',
+        };
+        for (let i = 1; i < rcRows.length; i++) {
+          const row = rcRows[i];
+          const ts = Number(row[rStart]);
+          if (!ts || ts < wkStart || ts >= wkEnd) continue;
+          if (String(row[rDir]||'').trim() !== 'outbound') continue;
+          const agentTm = agMap[String(row[rUser]||'').trim()] || '';
+          const key = KEY_MAP[agentTm];
+          if (!key) continue;
+          const ans = row[rAns] !== '' && row[rAns] != null;
+          const dur = Number(row[rDur]||0);
+          rawOut[key].total++;
+          if (ans && dur >= 10) rawOut[key].conn++;
+        }
       }
 
       const OUTBOUND_TEAMS = [
@@ -1056,15 +1090,16 @@ async function loadDashboard() {
         slTotal += Number(r['Outbound calls']||r['Outbound']||0);
         slConn  += Number(r['Connected outbound calls']||r['Connected outbound']||0);
       });
+      if (!slTotal) { slTotal = rawOut.secondline.total; slConn = rawOut.secondline.conn; }
 
       const result = OUTBOUND_TEAMS.map(td => {
         let outTotal = 0, outConn = 0, outTalkTime = '';
+        let hasSheetData = false;
         td.sheets.forEach(parsed => {
           const r = getRow(parsed);
-          outTotal += r.total;
-          outConn  += r.conn;
-          if (!outTalkTime && r.time) outTalkTime = r.time;
+          if (r) { outTotal += r.total; outConn += r.conn; if (!outTalkTime && r.time) outTalkTime = r.time; hasSheetData = true; }
         });
+        if (!hasSheetData) { outTotal = rawOut[td.key]?.total || 0; outConn = rawOut[td.key]?.conn || 0; }
         const connPct = outTotal > 0 ? outConn / outTotal * 100 : 0;
         return { key: td.key, label: td.label, outTotal, outConn, connPct, outTalkTime };
       });
@@ -1604,12 +1639,19 @@ const DAY_CHART_INBOUND_TEAMS = new Set([
 const DAY_CHART_INBOUND_NUMS = new Set(['286844','286845','286847','286848','192211','201178','1216204','326618']);
 const DAY_CHART_OUTBOUND_AGENTS = new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']);
 
-function parseOutboundRaw(rawRows) {
-  if (!rawRows || rawRows.length < 2) return [];
+function parseOutboundRaw(rows) {
+  if (!rows || rows.length < 1) return [];
   const result = [];
-  for (let i = 1; i < rawRows.length; i++) {
-    const wk = Number(rawRows[i][0]);
-    if (wk > 0) result.push({ wk, total: Number(rawRows[i][1]||0), conn: Number(rawRows[i][2]||0), time: String(rawRows[i][4]||'') });
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const isArr = Array.isArray(row);
+    const wk    = isArr ? Number(row[0]) : Number(row['Week of the year'] || row['Week'] || 0);
+    if (wk <= 0) continue;
+    const total = isArr ? Number(row[1]||0) : Number(row['Outbound calls']||0);
+    const conn  = isArr ? Number(row[2]||0) : Number(row['Outbound calls (connected calls > x sec)']||0);
+    const time  = isArr ? String(row[4]||'') : String(row['Outbound in-call time (connected calls > x sec)']||'');
+    result.push({ wk, total, conn, time });
   }
   return result;
 }
