@@ -1670,7 +1670,10 @@ function renderDashboard() {
     const hits = [];
     for (let i = 1; i < rawRows.length; i++) {
       const row = rawRows[i];
-      const dateKey = String(row[iStart]||'').split('T')[0];
+      const ts = Number(row[iStart]);
+      const dateKey = !isNaN(ts) && ts > 1000000000
+        ? new Date(ts * 1000).toISOString().split('T')[0]
+        : String(row[iStart]||'').split('T')[0];
       if (cbDates.has(dateKey)) {
         hits.push({ direction: row[iDir], started_at: row[iStart], team_name: row[iTeam], number_id: row[iNum], tags: iTags>=0?row[iTags]:'n/a' });
       }
