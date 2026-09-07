@@ -704,15 +704,15 @@ async function loadDashboard() {
       readSheet('call back data'),
       readSheet('cfg_agents '),
       readSheet('Support data inbound'),
-      readSheetRaw('Support outbound'),
+      readSheet('Support outbound'),
       readSheet('Revered data inbound'),
-      readSheetRaw('Revered data outbound'),
+      readSheet('Revered data outbound'),
       readSheet('Onboparding data inbound'),
-      readSheetRaw('Onboparding data outbound'),
+      readSheet('Onboparding data outbound'),
       readSheet('Risk data inbound'),
-      readSheetRaw('Risk data outbound'),
+      readSheet('Risk data outbound'),
       readSheet('Credit control inbound'),
-      readSheetRaw('Credit control outbound'),
+      readSheet('Credit control outbound'),
       readSheet('Key accounts inbound'),
       readSheet('Key accounts outbound'),
       readSheet('Smartbook inbound'),
@@ -756,37 +756,51 @@ async function loadDashboard() {
       const selCvWeek = (!week || week === 'latest') ? latestCvWeek : Number(week);
       const cvWeekRows = cvRows.filter(r => Number(r['Week']) === selCvWeek);
 
-      // Pre-compute raw_calls inbound counts per team for the selected week
+      // Pre-compute raw_calls inbound + outbound counts per team for the selected week
       // Used as fallback when the per-team sheet has no row for this week
-      const rawInByTeam = { support:{inbound:0,answered:0,missed:0}, revered:{inbound:0,answered:0,missed:0},
-        onboarding:{inbound:0,answered:0,missed:0}, risk:{inbound:0,answered:0,missed:0},
-        credit:{inbound:0,answered:0,missed:0}, secondline:{inbound:0,answered:0,missed:0} };
+      const emptyTeamRaw = () => ({inbound:0,answered:0,missed:0,outbound:0,connOut:0});
+      const rawByTeam = { support:emptyTeamRaw(), revered:emptyTeamRaw(),
+        onboarding:emptyTeamRaw(), risk:emptyTeamRaw(),
+        credit:emptyTeamRaw(), secondline:emptyTeamRaw() };
       const rawRows = globalData.rawCallsRows || [];
       if (rawRows.length > 1) {
         const rHdrs = rawRows[0].map(h => String(h).trim());
         const rDir=rHdrs.indexOf('direction'), rStart=rHdrs.indexOf('started_at');
-        const rAns=rHdrs.indexOf('answered_at'), rTeam=rHdrs.indexOf('team_name'), rNum=rHdrs.indexOf('number_id');
+        const rAns=rHdrs.indexOf('answered_at'), rTeam=rHdrs.indexOf('team_name');
+        const rNum=rHdrs.indexOf('number_id'), rUser=rHdrs.indexOf('user_name');
         const { wkStart, wkEnd } = isoWeekToRange(selectedInWeek);
+        const agentTeamMap = globalData.agentTeamMap || {};
         const TF = {
-          support:    { t:new Set(['Support']),                                        n:new Set(['286844','286845','286847','286848','192211']) },
-          revered:    { t:new Set(['Support Revered','Support + Revered']),             n:new Set([]) },
-          onboarding: { t:new Set(['Onboarding','Onboarding stage 1 calls']),           n:new Set(['201178']) },
-          risk:       { t:new Set(['Risk and compliance']),                             n:new Set(['1216204']) },
-          credit:     { t:new Set(['Credit Control','Support - Credit Control']),       n:new Set([]) },
-          secondline: { t:new Set(['2nd line (Tech support team)']),                   n:new Set(['326618']) },
+          support:    { t:new Set(['Support']),                                   n:new Set(['286844','286845','286847','286848','192211']) },
+          revered:    { t:new Set(['Support Revered','Support + Revered']),        n:new Set([]) },
+          onboarding: { t:new Set(['Onboarding','Onboarding stage 1 calls']),      n:new Set(['201178']) },
+          risk:       { t:new Set(['Risk and compliance']),                        n:new Set(['1216204']) },
+          credit:     { t:new Set(['Credit Control','Support - Credit Control']),  n:new Set([]) },
+          secondline: { t:new Set(['2nd line (Tech support team)']),               n:new Set(['326618']) },
         };
         for (let i = 1; i < rawRows.length; i++) {
           const row = rawRows[i];
           const ts = Number(row[rStart]);
           if (!ts || ts < wkStart || ts >= wkEnd) continue;
-          if (String(row[rDir]||'').trim() !== 'inbound') continue;
-          const tm = String(row[rTeam]||'').trim(), nm = String(row[rNum]||'').trim();
+          const dir = String(row[rDir]||'').trim();
           const ans = row[rAns] !== '' && row[rAns] != null;
-          for (const [key, f] of Object.entries(TF)) {
-            if (f.t.has(tm) || f.n.has(nm)) {
-              rawInByTeam[key].inbound++;
-              if (ans) rawInByTeam[key].answered++; else rawInByTeam[key].missed++;
-              break;
+          if (dir === 'inbound') {
+            const tm = String(row[rTeam]||'').trim(), nm = String(row[rNum]||'').trim();
+            for (const [key, f] of Object.entries(TF)) {
+              if (f.t.has(tm) || f.n.has(nm)) {
+                rawByTeam[key].inbound++;
+                if (ans) rawByTeam[key].answered++; else rawByTeam[key].missed++;
+                break;
+              }
+            }
+          } else if (dir === 'outbound') {
+            const agentTm = agentTeamMap[String(row[rUser]||'').trim()] || '';
+            for (const [key, f] of Object.entries(TF)) {
+              if (f.t.has(agentTm)) {
+                rawByTeam[key].outbound++;
+                if (ans) rawByTeam[key].connOut++;
+                break;
+              }
             }
           }
         }
@@ -796,7 +810,7 @@ async function loadDashboard() {
         const inF  = def.inR.find(r => Number(r['Week of the year']) === selectedInWeek) || null;
         const outF = def.outR.find(r => Number(r['Week of the year']) === selectedInWeek) || null;
 
-        const raw = rawInByTeam[def.key] || { inbound:0, answered:0, missed:0 };
+        const raw = rawByTeam[def.key] || emptyTeamRaw();
         const inbound   = inF ? (Number(inF['Inbound calls'])  || 0)   : raw.inbound;
         const answered  = inF ? (Number(inF['Answered inbound']) || 0)  : raw.answered;
         const missed    = inF ? (Number(inF['Unanswered inbound calls']) || 0) : raw.missed;
@@ -805,8 +819,8 @@ async function loadDashboard() {
           : (inbound > 0 ? answered / inbound * 100 : 0);
         const inTalkTime = inF ? String(inF['Inbound in-call time'] || '') : '';
 
-        let outbound    = outF ? (Number(outF['Outbound calls']) || 0) : 0;
-        let connOut     = outF ? (Number(outF['Outbound calls (connected calls > x sec)']) || 0) : 0;
+        let outbound    = outF ? (Number(outF['Outbound calls']) || 0) : raw.outbound;
+        let connOut     = outF ? (Number(outF['Outbound calls (connected calls > x sec)']) || 0) : raw.connOut;
         let outTalkTime = outF ? String(outF['Outbound in-call time (connected calls > x sec)'] || '') : '';
 
         if (def.key === 'secondline') {
