@@ -572,7 +572,7 @@ function _colNumToLetter(n) {
 }
 
 async function readSheetRawLarge(sheetName) {
-  const CACHE_KEY = 'teg_rawcalls_v3';
+  const CACHE_KEY = 'teg_rawcalls_v4';
   const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 
   if (!window._rawCallsForceRefresh) {
@@ -606,7 +606,7 @@ async function readSheetRawLarge(sheetName) {
 
     const endCol = _colNumToLetter(columnCount);
     const CHUNK = 2000;
-    const MAX_ROWS = 50000;
+    const MAX_ROWS = 100000;
     const allRows = [];
 
     const startRow = rowCount > MAX_ROWS ? rowCount - MAX_ROWS + 1 : 2;
