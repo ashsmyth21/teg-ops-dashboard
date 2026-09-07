@@ -526,7 +526,7 @@ async function readSheet(sheetName) {
     const token = await getToken();
     if (!token) return [];
     const base = await getFileEndpoint();
-    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
+    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange(valuesOnly=true)`;
     const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
     if (!resp.ok) {
       console.error('Sheet error', sheetName, resp.status, await resp.text());
@@ -548,7 +548,7 @@ async function readSheetRaw(sheetName) {
     const token = await getToken();
     if (!token) return [];
     const base = await getFileEndpoint();
-    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`;
+    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange(valuesOnly=true)`;
     const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
     if (!resp.ok) { const errTxt = await resp.text(); console.error('Sheet error (raw)', sheetName, resp.status, errTxt); return []; }
     const data = await resp.json();
