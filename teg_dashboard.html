@@ -590,9 +590,21 @@ async function readSheetRawLarge(sheetName) {
 
     const endCol = _colNumToLetter(columnCount);
     const CHUNK = 5000;
+    const MAX_ROWS = 30000;
     const allRows = [];
 
-    for (let r = 1; r <= rowCount; r += CHUNK) {
+    // Always read header row first (row 1)
+    const startRow = rowCount > MAX_ROWS ? rowCount - MAX_ROWS + 1 : 2;
+
+    const hdrResp = await fetch(
+      `${base}/workbook/worksheets('${enc}')/range(address='A1:${endCol}1')?$select=values`,
+      { headers: h }
+    );
+    if (!hdrResp.ok) { console.error('header error', sheetName, hdrResp.status); return []; }
+    const hdrData = await hdrResp.json();
+    if (hdrData.values) allRows.push(...hdrData.values);
+
+    for (let r = startRow; r <= rowCount; r += CHUNK) {
       const endRow = Math.min(r + CHUNK - 1, rowCount);
       const resp = await fetch(
         `${base}/workbook/worksheets('${enc}')/range(address='A${r}:${endCol}${endRow}')?$select=values`,
