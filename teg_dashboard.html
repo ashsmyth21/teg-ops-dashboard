@@ -571,16 +571,16 @@ function _colNumToLetter(n) {
 }
 
 async function readSheetRawLarge(sheetName) {
-  const CACHE_KEY = 'teg_rawcalls_v5';
+  const CACHE_KEY = 'teg_rawcalls_v6';
   const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 
   if (!window._rawCallsForceRefresh) {
     try {
-      const cached = sessionStorage.getItem(CACHE_KEY);
+      const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         const { ts, data } = JSON.parse(cached);
         if (Date.now() - ts < CACHE_TTL) {
-          console.log('raw_calls: from session cache (' + data.length + ' rows)');
+          console.log('raw_calls: from cache (' + data.length + ' rows)');
           return data;
         }
       }
@@ -605,7 +605,7 @@ async function readSheetRawLarge(sheetName) {
 
     const endCol = _colNumToLetter(columnCount);
     const CHUNK = 5000;
-    const MAX_ROWS = 30000;
+    const MAX_ROWS = 50000;
     const allRows = [];
 
     const startRow = rowCount > MAX_ROWS ? rowCount - MAX_ROWS + 1 : 2;
@@ -630,9 +630,9 @@ async function readSheetRawLarge(sheetName) {
     }
 
     try {
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: allRows }));
-      console.log('raw_calls: cached ' + allRows.length + ' rows in sessionStorage');
-    } catch(e) { console.warn('raw_calls: sessionStorage write failed (' + e.name + ') — continuing without cache'); }
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: allRows }));
+      console.log('raw_calls: cached ' + allRows.length + ' rows in localStorage');
+    } catch(e) { console.warn('raw_calls: localStorage write failed (' + e.name + ') — continuing without cache'); }
 
     return allRows;
   } catch(e) { console.error('readSheetRawLarge error', sheetName, e); return []; }
