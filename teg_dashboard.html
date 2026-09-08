@@ -418,7 +418,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     <div class="card" style="overflow-x:auto;margin-bottom:24px">
       <table><thead><tr>
         <th class="l">Week</th><th class="l">Callback requests</th><th class="l">Called back</th>
-        <th class="l">Not called back</th><th class="l">% called back</th><th class="l">Avg pending (mins)</th><th class="l">Teams</th>
+        <th class="l">Not called back</th><th class="l">% called back</th><th class="l">Avg pending (mins)</th>
       </tr></thead><tbody id="cbBody"></tbody></table>
 <style>
 .cb-week-row{cursor:pointer;user-select:none}
@@ -1564,44 +1564,12 @@ function renderDashboard() {
   document.getElementById('aiBriefPanel').style.display = 'block';
   updateKeyDot();
 
-  // Build callback team attribution from raw_calls ("Callback Request" tag)
-  function excelSerialToYMD(val) {
-    if (!val) return null;
-    const n = Number(val);
-    if (!isNaN(n) && n > 40000) {
-      const d = new Date((n - 25569) * 86400000);
-      return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
-    }
-    const s = String(val).trim();
-    const iso = s.match(/^(\d{4}-\d{2}-\d{2})/); if (iso) return iso[1];
-    const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (mdy) return `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`;
-    return null;
-  }
-
-  const cbTeamByDate = {};
-  const _rcRows = globalData.rawCallsRows || [];
-  if (_rcRows.length > 1) {
-    const _rh = _rcRows[0].map(h => String(h).trim());
-    const _iSt = _rh.indexOf('started_at'), _iTeam = _rh.indexOf('team_name'), _iTags = _rh.indexOf('tags');
-    for (let i = 1; i < _rcRows.length; i++) {
-      const row = _rcRows[i];
-      if (!String(row[_iTags]||'').includes('Callback Request')) continue;
-      const ts = Number(row[_iSt]);
-      if (!ts || ts <= 1e9) continue;
-      const dk = new Date(ts * 1000).toISOString().split('T')[0];
-      const tm = String(row[_iTeam]||'').trim(); if (!tm) continue;
-      if (!cbTeamByDate[dk]) cbTeamByDate[dk] = {};
-      cbTeamByDate[dk][tm] = (cbTeamByDate[dk][tm] || 0) + 1;
-    }
-  }
-
   const cbByWeek = {};
   cbRows.forEach(r => {
     const week = r['Week'] || r['week 22'];
     if (!week) return;
     const wk = String(week);
-    if (!cbByWeek[wk]) cbByWeek[wk] = { total:0, calledBack:0, notActioned:0, pendingSum:0, pendingCount:0, days:[], teams:{} };
+    if (!cbByWeek[wk]) cbByWeek[wk] = { total:0, calledBack:0, notActioned:0, pendingSum:0, pendingCount:0, days:[] };
     const req = Number(r['Callback requests']) || 0;
     const cb  = Number(r['Called back'])       || 0;
     const na  = Number(r['Not actioned'])      || 0;
@@ -1611,10 +1579,7 @@ function renderDashboard() {
     cbByWeek[wk].notActioned += na;
     if (pend > 0) { cbByWeek[wk].pendingSum += pend; cbByWeek[wk].pendingCount++; }
     const date = r['Date'];
-    const dateYMD = excelSerialToYMD(date);
-    const dayTeams = (dateYMD && cbTeamByDate[dateYMD]) || {};
-    Object.entries(dayTeams).forEach(([t,c]) => { cbByWeek[wk].teams[t] = (cbByWeek[wk].teams[t]||0) + c; });
-    if (date) cbByWeek[wk].days.push({ date, dateYMD, req, cb, na, pend, rate: Number(r['Rate %'])||0, teams: dayTeams });
+    if (date) cbByWeek[wk].days.push({ date, req, cb, na, pend, rate: Number(r['Rate %'])||0 });
   });
 
   const DAYS_OF_WEEK = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -1635,20 +1600,6 @@ function renderDashboard() {
     return null;
   }
 
-  const CB_TEAM_COLOURS = {
-    'Support': '#1d4ed8', 'Support Revered': '#7c3aed', 'Risk and compliance': '#b45309',
-    'Onboarding': '#15803d', 'Onboarding stage 1 calls': '#15803d',
-    'Support - Credit Control': '#be185d', '2nd line (Tech support team)': '#c2410c',
-  };
-  function renderTeamChips(teams) {
-    const entries = Object.entries(teams).sort((a,b)=>b[1]-a[1]);
-    if (!entries.length) return '<span style="color:var(--subtle);font-size:10px">—</span>';
-    return entries.map(([t,c]) => {
-      const col = CB_TEAM_COLOURS[t] || '#6b7280';
-      return `<span style="display:inline-block;background:${col}18;color:${col};border:1px solid ${col}40;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;margin:1px 2px 1px 0;white-space:nowrap">${t} <span style="opacity:.7">${c}</span></span>`;
-    }).join('');
-  }
-
   let cbHtml = '';
   if (Object.keys(cbByWeek).length > 0) {
     Object.entries(cbByWeek).sort((a,b) => Number(a[0])-Number(b[0])).forEach(([week, d]) => {
@@ -1663,7 +1614,6 @@ function renderDashboard() {
         <td class="l" style="color:var(--red);font-weight:500">${d.notActioned > 0 ? d.notActioned : '—'}</td>
         <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
         <td class="l">${avgPending ? avgPending.toFixed(1)+' mins' : '—'}</td>
-        <td class="l">${renderTeamChips(d.teams)}</td>
       </tr>`;
       const sortedDays = d.days.map(dy => dy.date).sort();
       sortedDays.forEach(date => {
@@ -1679,68 +1629,12 @@ function renderDashboard() {
           <td class="l" style="color:var(--red)">${dy.na > 0 ? dy.na : '—'}</td>
           <td class="l" style="color:${dPctCol};font-weight:600">${dy.rate ? dy.rate.toFixed(1)+'%' : '—'}</td>
           <td class="l">${dy.pend ? dy.pend.toFixed(1)+' mins' : '—'}</td>
-          <td class="l">${renderTeamChips(dy.teams)}</td>
         </tr>`;
       });
     });
   }
-  if (!cbHtml) cbHtml = '<tr><td colspan="7" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
+  if (!cbHtml) cbHtml = '<tr><td colspan="6" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
   document.getElementById('cbBody').innerHTML = cbHtml;
-
-  window.debugCallbacks = function() {
-    const rawRows = globalData.rawCallsRows;
-    if (!rawRows || rawRows.length < 2) { console.log('No raw_calls data loaded, length:', rawRows?.length); return; }
-    const hdrs = rawRows[0].map(h => String(h).trim());
-    console.log('raw_calls columns:', hdrs);
-    console.log('raw_calls row count (incl header):', rawRows.length);
-    const iS = hdrs.indexOf('started_at');
-    const samples = [rawRows[1], rawRows[Math.floor(rawRows.length/2)], rawRows[rawRows.length-1]].map(r => {
-      const ts = Number(r[iS]); return { raw: r[iS], asDate: !isNaN(ts)&&ts>1e9 ? new Date(ts*1000).toISOString().split('T')[0] : String(r[iS]).split('T')[0] };
-    });
-    console.log('started_at samples (first/mid/last):', samples);
-
-    // Convert callback dates to YYYY-MM-DD (handles Excel serial numbers and ISO strings)
-    function toYMD(val) {
-      if (!val) return null;
-      const n = Number(val);
-      if (!isNaN(n) && n > 40000) {
-        // Excel serial date
-        const d = new Date((n - 25569) * 86400000);
-        const y = d.getUTCFullYear(), m = String(d.getUTCMonth()+1).padStart(2,'0'), dd = String(d.getUTCDate()).padStart(2,'0');
-        return `${y}-${m}-${dd}`;
-      }
-      const s = String(val).trim();
-      const iso = s.match(/^(\d{4}-\d{2}-\d{2})/); if (iso) return iso[1];
-      const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (mdy) return `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`;
-      return null;
-    }
-
-    const cbDates = new Set();
-    (globalData.cbRows||[]).forEach(r => { const d = toYMD(r['Date']); if (d) cbDates.add(d); });
-    console.log('Callback dates (converted):', [...cbDates].sort());
-
-    const iDir = hdrs.indexOf('direction'), iStart = hdrs.indexOf('started_at');
-    const iTeam = hdrs.indexOf('team_name'), iNum = hdrs.indexOf('number_id');
-    const iTags = hdrs.indexOf('tags');
-    const hits = [];
-    for (let i = 1; i < rawRows.length; i++) {
-      const row = rawRows[i];
-      const ts = Number(row[iStart]);
-      const dateKey = !isNaN(ts) && ts > 1000000000
-        ? new Date(ts * 1000).toISOString().split('T')[0]
-        : String(row[iStart]||'').split('T')[0];
-      if (cbDates.has(dateKey)) {
-        hits.push({ direction: row[iDir], started_at: row[iStart], team_name: row[iTeam], number_id: row[iNum], tags: iTags>=0?row[iTags]:'n/a' });
-      }
-    }
-    console.log(`raw_calls rows on callback dates (${hits.length} found):`, hits.slice(0,20));
-    if (hits.length > 0) {
-      console.log('Unique teams:', [...new Set(hits.map(h=>h.team_name))]);
-      console.log('Unique directions:', [...new Set(hits.map(h=>h.direction))]);
-      console.log('Unique tags:', [...new Set(hits.map(h=>String(h.tags||'')))].filter(t=>t).slice(0,20));
-    }
-  };
 
   document.getElementById('heatTabs').addEventListener('click', e => {
     const btn = e.target.closest('.tab'); if (!btn) return;
