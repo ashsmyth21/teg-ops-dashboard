@@ -1113,7 +1113,7 @@ function renderDashboard() {
   // ---- Agent week filter ----
   const weekTabsEl=document.getElementById('weekTabs');
   const weeks=globalData.availableWeeks||[];
-  weekTabsEl.innerHTML='<button class="tab'+(currentWeek==='latest'?' active':'\')+' data-week="latest">Latest</button>'+weeks.map(w=>`<button class="tab${currentWeek==w?' active':''}" data-week="${w}">Wk ${w}</button>`).join('');
+  weekTabsEl.innerHTML=['<button class="tab'+(currentWeek==="latest"?' active':'')+'" data-week="latest">Latest</button>',...weeks.map(w=>'<button class="tab'+(currentWeek==w?' active':'')+'" data-week="'+w+'">Wk '+w+'</button>')].join('');
   weekTabsEl.addEventListener('click',e=>{
     const btn=e.target.closest('.tab'); if(!btn) return;
     document.querySelectorAll('#weekTabs .tab').forEach(t=>t.classList.remove('active'));
@@ -1124,7 +1124,7 @@ function renderDashboard() {
 
   // ---- Heatmap week filter ----
   const heatWeekTabsEl=document.getElementById('heatWeekTabs');
-  heatWeekTabsEl.innerHTML='<button class="tab'+(currentHeatWeek==='latest'?' active':'\')+' data-week="latest">Latest</button>'+weeks.map(w=>`<button class="tab${currentHeatWeek==w?' active':''}" data-week="${w}">Wk ${w}</button>`).join('');
+  heatWeekTabsEl.innerHTML=['<button class="tab'+(currentHeatWeek==="latest"?' active':'')+'" data-week="latest">Latest</button>',...weeks.map(w=>'<button class="tab'+(currentHeatWeek==w?' active':'')+'" data-week="'+w+'">Wk '+w+'</button>')].join('');
   heatWeekTabsEl.addEventListener('click',e=>{
     const btn=e.target.closest('.tab'); if(!btn) return;
     document.querySelectorAll('#heatWeekTabs .tab').forEach(t=>t.classList.remove('active'));
@@ -1714,7 +1714,7 @@ async function generateAIBrief() {
   const textEl = document.getElementById('aiBriefText');
   btn.disabled = true;
   btn.innerHTML = '<span class="spin-sm"></span> Generating…';
-  textEl.textContent = 'Analysing this week's performance data…';
+  textEl.textContent = 'Analysing this week\'s performance data…';
   try {
     const agents = globalData.agents || [];
     const teamSummary = globalData.teamSummary || [];
