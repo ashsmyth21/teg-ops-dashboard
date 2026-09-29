@@ -1344,9 +1344,10 @@ function renderDashboard() {
         const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
         const wkId = 'cbw-' + week;
                 const tc = CB_TAB_COLORS[teamFilter] || '#888';
+                const tc = CB_TAB_COLORS[teamFilter] || '#888';
         const teamCell = teamFilter === 'all'
           ? `<td class="l" style="color:var(--muted);font-size:10px">All</td>`
-          : `<td class="l"><span class="team-pill" style="background:${tc}18;color:${tc}">${CB_TAB_LABELS[teamFilter]||teamFilter}</span>
+          : `<td class="l"><span class="team-pill" style="background:${tc}18;color:${tc}">${CB_TAB_LABELS[teamFilter]||teamFilter}</span></td>`;
         cbHtml += `<tr class="cb-week-row" data-wk="${wkId}" onclick="toggleCbWeek('${wkId}',this)">
           <td class="l"><strong>Week ${week}</strong></td>
           ${teamCell}
