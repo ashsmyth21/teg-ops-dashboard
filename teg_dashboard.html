@@ -377,12 +377,12 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
       <button class="export-btn" onclick="exportAgentsCSV()">⬇ Export CSV</button>
     </div>
     <div class="tabs" id="agentTabs">
-      <button class="tab active" data-team="all">All teams</button>
-      <button class="tab" data-team="Support + Revered">Support + Revered</button>
-      <button class="tab" data-team="Onboarding">Onboarding</button>
-      <button class="tab" data-team="Risk and compliance">Risk</button>
-      <button class="tab" data-team="Credit Control">Credit control</button>
-      <button class="tab" data-team="2nd line (Tech support team)">2nd line</button>
+      <button class="tab active" data-team="all">All ops teams</button>
+      <button class="tab" data-team="support">Support + Revered</button>
+      <button class="tab" data-team="onboarding">Onboarding</button>
+      <button class="tab" data-team="risk">Risk</button>
+      <button class="tab" data-team="credit">Credit control</button>
+      <button class="tab" data-team="secondline">2nd line</button>
     </div>
     <div class="card" style="padding:0;margin-bottom:12px;overflow:hidden">
       <div style="overflow:auto;max-height:480px;border-radius:8px">
@@ -1568,7 +1568,7 @@ function renderAgents(teamFilter) {
   document.querySelectorAll('#agentTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.team === teamFilter));
 
   let agents = globalData.agents || [];
-  if (teamFilter !== 'all') agents = agents.filter(a => a.team === teamFilter);
+    agents = agents.filter(a => teamInGroup(a.team, teamFilter));
   if (_agentSearchVal) {
     const q = _agentSearchVal.toLowerCase();
     agents = agents.filter(a => a.name.toLowerCase().includes(q));
