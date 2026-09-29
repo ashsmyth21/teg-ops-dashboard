@@ -748,6 +748,22 @@ const DAY_CHART_INBOUND_TEAMS = new Set(['Support','Support Revered','Onboarding
 const DAY_CHART_INBOUND_NUMS  = new Set(['286844','286845','286847','286848','192211','201178','1216204','326618']);
 const DAY_CHART_OUTBOUND_AGENTS = new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']);
 
+  // ============================================================
+// OPS TEAM ALLOW-LIST (agent master report + callback report)
+// ============================================================
+const OPS_TEAM_GROUPS = {
+  support:    ['Support','Support Revered','Support + Revered','Revered'],
+  onboarding: ['Onboarding','Onboarding stage 1 calls'],
+  risk:       ['Risk and compliance'],
+  credit:     ['Support - Credit Control','Credit Control'],
+  secondline: ['2nd line (Tech support team)'],
+};
+const OPS_TEAMS = new Set(Object.values(OPS_TEAM_GROUPS).flat());
+function isOpsTeam(t) { return OPS_TEAMS.has(String(t||'').trim()); }
+function teamInGroup(t, g) { return g === 'all' || (OPS_TEAM_GROUPS[g]||[]).includes(String(t||'').trim()); }
+const CB_TAB_LABELS = { support:'Support', onboarding:'Onboarding', risk:'Risk', credit:'Credit control', secondline:'2nd line', unrouted:'Unrouted' };
+const CB_TAB_COLORS = { support:'#1d4ed8', onboarding:'#15803d', risk:'#b45309', credit:'#7c3aed', secondline:'#c2410c', unrouted:'#6b7280' };
+
 // ============================================================
 // GLOBAL STATE
 // ============================================================
