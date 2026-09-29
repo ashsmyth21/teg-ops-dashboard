@@ -990,6 +990,10 @@ async function loadDashboard() {
                out_for_lunch:gs('out_for_lunch'),on_a_break:gs('on_a_break'),
                inbound_calls:inb,outbound_calls:out,total_outbound:totalOut,callUtil,zdUtil,partWeek:false,cv,zd,ai,
                talk_inbound:_tt.inbound,talk_outbound:_tt.outbound };
+        }).filter(a => {
+      if (isOpsTeam(a.team)) return true;
+      console.info('Agent report: excluded', a.name, '→', a.team);
+      return false;
     }).sort((a,b)=>(b.callUtil+b.zdUtil)-(a.callUtil+a.zdUtil));
 
     function buildOutboundSummary(week) {
