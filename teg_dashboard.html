@@ -1289,9 +1289,6 @@ function renderDashboard() {
     if (dmy) return new Date(Number(dmy[3]), Number(dmy[2])-1, Number(dmy[1])); // DD/MM/YYYY
     return null;
   }
-    return null;
-  }
-
   function renderCallbacks(teamFilter) {
     const TEAM_COLORS_CB = { 'Support':'#1d4ed8', 'Unrouted':'#6b7280', 'Risk and compliance':'#b45309' };
     const DAYS_OF_WEEK = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
