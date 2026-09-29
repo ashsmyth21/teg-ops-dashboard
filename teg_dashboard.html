@@ -1318,7 +1318,10 @@ function renderDashboard() {
       const week = r['Week'] || r['week 22'];
       if (!week) return;
       const rowTeam = String(r['Team'] || '').trim();
-      if (teamFilter !== 'all' && rowTeam !== teamFilter) return;
+            const isUnrouted = !rowTeam || rowTeam === 'Unrouted';
+      if (!isUnrouted && !isOpsTeam(rowTeam)) return;
+      if (teamFilter === 'unrouted' && !isUnrouted) return;
+      if (teamFilter !== 'all' && teamFilter !== 'unrouted' && !teamInGroup(rowTeam, teamFilter)) return;
       const wk = String(week);
       if (!cbByWeek[wk]) cbByWeek[wk] = { total:0, calledBack:0, notActioned:0, pendingSum:0, pendingCount:0, days:[] };
       const req  = Number(r['Callback req']) || 0;
@@ -1340,10 +1343,10 @@ function renderDashboard() {
         const avgPending = d.pendingCount > 0 ? (d.pendingSum / d.pendingCount) : 0;
         const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
         const wkId = 'cbw-' + week;
-        const tc = TEAM_COLORS_CB[teamFilter] || '#888';
+                const tc = CB_TAB_COLORS[teamFilter] || '#888';
         const teamCell = teamFilter === 'all'
           ? `<td class="l" style="color:var(--muted);font-size:10px">All</td>`
-          : `<td class="l"><span class="team-pill" style="background:${tc}18;color:${tc}">${teamFilter}</span></td>`;
+          : `<td class="l"><span class="team-pill" style="background:${tc}18;color:${tc}">${CB_TAB_LABELS[teamFilter]||teamFilter}</span>
         cbHtml += `<tr class="cb-week-row" data-wk="${wkId}" onclick="toggleCbWeek('${wkId}',this)">
           <td class="l"><strong>Week ${week}</strong></td>
           ${teamCell}
