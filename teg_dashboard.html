@@ -312,7 +312,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div id="teamGrid" class="team-grid"></div>
 
-    <div class="section-wrap"><div class="section-label">Answer rate trend — last 8 weeks</div><button class="info-btn" data-tip="Inbound answer rate per team plotted week-on-week." data-update="Live from agent stats sheet">i</button></div>
+    <div class="section-wrap"><div class="section-label">Answer rate trend — last 8 weeks</div><button class="info-btn" data-tip="Inbound answer rate per team, week by week — same figures as the Team overview cards. Hover a week to see answered vs received." data-update="Live from raw calls">i</button></div>
     <div class="trend-card"><div class="trend-wrap"><canvas id="trendChart"></canvas></div></div>
 
     <div class="two-col">
@@ -1637,32 +1637,43 @@ function applyCustomWeek() {
 // TREND CHART
 // ============================================================
 function renderTrendChart() {
-  const { agentStatsRows, teamRows } = globalData;
-  if (!agentStatsRows || !teamRows) return;
-  const allWeeks = [...new Set(agentStatsRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-  const last8 = allWeeks.slice(-8);
-  const TREND_TEAMS = [
-    { label:'Support',   keys:new Set(['Support + Revered','Support']), color:'#3b82f6' },
-    { label:'Onboarding',keys:new Set(['Onboarding']),                  color:'#15803d' },
-    { label:'Risk',      keys:new Set(['Risk and compliance']),          color:'#b45309' },
-    { label:'Credit',    keys:new Set(['Credit Control']),               color:'#7c3aed' },
+  // Uses the SAME calculation as the Team overview cards (buildTeamSummary):
+  // team inbound sheet if it has a row for that week, otherwise raw_calls by team_name / team number.
+  if (!globalData.buildTeamSummary) return;
+  const weeks = (globalData.availableWeeks || []).map(Number).filter(w => w > 0).slice(-8);
+  const TEAMS = [
+    { key:'support',    label:'Support',     color:'#1d4ed8' },
+    { key:'revered',    label:'Revered',     color:'#0e7490' },
+    { key:'onboarding', label:'Onboarding',  color:'#15803d' },
+    { key:'risk',       label:'Risk',        color:'#b45309' },
+    { key:'credit',     label:'Credit ctrl', color:'#7c3aed' },
+    { key:'secondline', label:'2nd line',    color:'#c2410c' },
   ];
+  const byWeek = weeks.map(w => globalData.buildTeamSummary(w));
+  const detail = {};   // team key -> per-week {answered, inbound}
+  const datasets = TEAMS.map(tm => {
+    detail[tm.key] = byWeek.map(s => { const x = s.find(y => y.key === tm.key); return x ? { a: x.answered, n: x.inbound } : { a: 0, n: 0 }; });
+    return {
+      label: tm.label, _key: tm.key, borderColor: tm.color, backgroundColor: tm.color,
+      data: detail[tm.key].map(d => d.n > 0 ? Math.round(d.a / d.n * 1000) / 10 : null),
+      tension: 0.3, fill: false, pointRadius: 3, spanGaps: true,
+    };
+  });
   if (charts.trend) charts.trend.destroy();
   charts.trend = new Chart(document.getElementById('trendChart'), {
-    type:'line',
-    data:{ labels:last8.map(w=>'Wk '+w), datasets: TREND_TEAMS.map(tt => ({
-      label:tt.label, borderColor:tt.color, backgroundColor:tt.color+'20',
-      data:last8.map(w=>{
-        const inRows=(globalData.teamDefs||[]).find(d=>d.label===tt.label||d.key===tt.label.toLowerCase());
-        if (inRows&&inRows.inR&&inRows.inR.length) {
-          const r=inRows.inR.find(r=>Number(r['Week of the year'])===Number(w));
-          if (r) return Math.round((parseFloat(r['Percentage of answered inbound calls'])||0)*100);
-        }
-        return null;
-      }),
-      tension:0.3, fill:false, pointRadius:3,
-    }))},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}}},scales:{x:{grid:{display:false}},y:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{color:'rgba(0,0,0,.05)'}}}}
+    type: 'line',
+    data: { labels: weeks.map(w => 'Wk ' + w), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 10, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => {
+          const d = detail[ctx.dataset._key][ctx.dataIndex];
+          return `${ctx.dataset.label}: ${ctx.parsed.y}% (${d.a} of ${d.n} answered)`;
+        } } }
+      },
+      scales: { x: { grid: { display: false } }, y: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } } }
+    }
   });
 }
 
