@@ -423,22 +423,60 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
       </div>
     </div>
 
-    <!-- CALLBACK REPORT -->
-    <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Callers who pressed * to request a callback. Team filter shows per-team breakdown." data-update="Daily at 5am">i</button></div>
-    <div class="tabs" id="cbTeamTabs">
-      <button class="tab active" data-cbteam="all">All teams</button>
-      <button class="tab" data-cbteam="Support">Support</button>
-      <button class="tab" data-cbteam="Unrouted">Unrouted</button>
-      <button class="tab" data-cbteam="Risk and compliance">Risk</button>
+    <!-- CALLBACK REPORT (v2) -->
+    <style>
+      .cb-controls{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+      .cb-note{margin-top:10px;background:var(--amber-light);color:var(--amber);border:1px solid #fde68a;border-radius:6px;padding:6px 10px;font-size:11px}
+      .cb-sub{font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px}
+      .cb-sub span{font-weight:400;color:var(--subtle);margin-left:4px}
+      .cb-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:24px}
+      .cb-team-row{display:grid;grid-template-columns:170px 1fr 50px 50px;gap:8px;align-items:center;font-size:11px;padding:6px 0;border-bottom:1px solid var(--border)}
+      .cb-team-row.head{color:var(--muted);font-size:10px}
+      .cb-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
+      .cb-bar>span{display:block;height:6px;border-radius:3px}
+      @media(max-width:1000px){.cb-split{grid-template-columns:1fr}}
+    </style>
+    <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Callers who pressed * to request a callback — ops teams only. Pick a period and team; click a week to see its days." data-update="Daily at 5am">i</button></div>
+    <div class="card" style="margin-bottom:24px">
+      <div class="cb-controls">
+        <div class="tabs" id="cbPeriodTabs" style="margin-bottom:0">
+          <button class="tab" data-p="4">4 weeks</button>
+          <button class="tab active" data-p="8">8 weeks</button>
+          <button class="tab" data-p="12">12 weeks</button>
+          <button class="tab" data-p="all">All</button>
+        </div>
+        <div class="tabs" id="cbTeamTabs" style="margin-bottom:0">
+          <button class="tab active" data-cbteam="all">All ops teams</button>
+          <button class="tab" data-cbteam="support">Support</button>
+          <button class="tab" data-cbteam="onboarding">Onboarding</button>
+          <button class="tab" data-cbteam="risk">Risk</button>
+          <button class="tab" data-cbteam="credit">Credit control</button>
+          <button class="tab" data-cbteam="secondline">2nd line</button>
+        </div>
+      </div>
+      <div id="cbUnroutedNote" class="cb-note" style="display:none"></div>
+      <div class="metrics-row" style="margin:12px 0 18px">
+        <div class="metric-card"><div class="lbl">Callback requests</div><div class="val" id="cbmReq">—</div><div class="sub" id="cbdReq"></div></div>
+        <div class="metric-card"><div class="lbl">Called back</div><div class="val" id="cbmCb" style="color:var(--green)">—</div><div class="sub" id="cbdCb"></div></div>
+        <div class="metric-card"><div class="lbl">Not called back</div><div class="val" id="cbmNa" style="color:var(--red)">—</div><div class="sub" id="cbdNa"></div></div>
+        <div class="metric-card"><div class="lbl">% called back</div><div class="val" id="cbmPct">—</div><div class="sub" id="cbdPct"></div></div>
+      </div>
+      <div class="cb-sub">Weekly trend <span>* current week, still in progress</span></div>
+      <div class="chart-wrap" style="height:220px;margin-bottom:20px"><canvas id="cbChart"></canvas></div>
+      <div class="cb-split">
+        <div>
+          <div class="cb-sub">By team</div>
+          <div id="cbTeams"></div>
+        </div>
+        <div>
+          <div class="cb-sub">Week detail <span>newest first · click a week to see its days</span></div>
+          <table><thead><tr>
+            <th class="l">Week</th><th>Requests</th><th>Called back</th><th>Not called back</th><th>%</th>
+          </tr></thead><tbody id="cbBody"></tbody></table>
+          <div id="cbMore" style="margin-top:8px"></div>
+        </div>
+      </div>
     </div>
-    <div class="card" style="overflow-x:auto;margin-bottom:24px">
-      <table><thead><tr>
-        <th class="l">Week</th><th class="l">Team</th><th class="l">Callback requests</th><th class="l">Called back</th>
-        <th class="l">Not called back</th><th class="l">% called back</th><th class="l">Avg pending (mins)</th>
-      </tr></thead><tbody id="cbBody"></tbody></table>
-    </div>
-  </div>
-</div>
 
 <!-- Settings Modal -->
 <div class="modal-overlay" id="settingsModal">
@@ -1385,14 +1423,7 @@ function renderDashboard() {
     document.getElementById('cbBody').innerHTML = cbHtml;
   }
 
-  renderCallbacks('all');
-  document.getElementById('cbTeamTabs').addEventListener('click', e => {
-    const btn = e.target.closest('.tab'); if (!btn) return;
-    document.querySelectorAll('#cbTeamTabs .tab').forEach(t => t.classList.remove('active'));
-    btn.classList.add('active');
-    cbTeamFilter = btn.dataset.cbteam;
-    renderCallbacks(cbTeamFilter);
-  });
+        renderCallbackReport();
 }
 
 // ============================================================
@@ -1764,6 +1795,214 @@ Highlight any teams with answer rates below 70%, standout performers, and overal
   btn.innerHTML = '✦ Regenerate';
 }
 
+// ============================================================
+// CALLBACK REPORT (v2) — period + team filters, KPIs, trend, team split, week detail
+// ============================================================
+const CB_STATE = { period: 8, team: 'all', showAll: false, open: {}, ctx: null };
+const CB_DAY = 86400000;
+const CB_TEAM_COLOURS = {
+  'Support':'#1d4ed8','Support Revered':'#0e7490','Support + Revered':'#1d4ed8','Revered':'#0e7490',
+  'Onboarding':'#15803d','Onboarding stage 1 calls':'#166534',
+  'Risk and compliance':'#b45309','Credit Control':'#7c3aed','Support - Credit Control':'#7c3aed',
+  '2nd line (Tech support team)':'#c2410c','Unrouted':'#6b7280'
+};
+
+function cbParseDate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!isNaN(n) && n > 40000) { const d = new Date((n - 25569) * CB_DAY); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return new Date(+m[3], +m[2] - 1, +m[1]); // DD/MM/YYYY
+  return null;
+}
+function cbMonday(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function cbAddWeeks(t, n) { const x = new Date(t); x.setDate(x.getDate() + n * 7); return x.getTime(); }
+function cbIsoWeek(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7) + 3);
+  const f = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+  f.setUTCDate(f.getUTCDate() - ((f.getUTCDay() + 6) % 7) + 3);
+  return 1 + Math.round((t - f) / (7 * CB_DAY));
+}
+function cbPctColour(p) { return p >= 70 ? 'var(--green)' : p >= 50 ? 'var(--amber)' : 'var(--red)'; }
+function cbFmtDay(d) { return ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(d.getDay() + 6) % 7] + ' ' + d.getDate() + '/' + (d.getMonth() + 1); }
+function cbSum(rows) { let req = 0, cb = 0; rows.forEach(r => { req += r.req; cb += r.cb; }); return { req, cb, na: req - cb, pct: req ? cb / req * 100 : 0 }; }
+
+function cbRows() {
+  const out = [];
+  (globalData.cbRows || []).forEach(r => {
+    const d = cbParseDate(r['Date']); if (!d) return;
+    const team = String(r['Team'] || '').trim();
+    const unrouted = !team || team === 'Unrouted';
+    if (!unrouted && !isOpsTeam(team)) return;          // ops teams only (Sales, Renewals, Smartbook etc. excluded)
+    const req = Number(r['Callback req']) || 0;
+    const cb  = Math.min(req, Number(r['Called back']) || 0);
+    out.push({ d, mon: cbMonday(d).getTime(), team, unrouted, req, cb });
+  });
+  return out;
+}
+
+function cbDelta(cur, prev, opts) {
+  if (prev === null) return `<span class="muted">${opts.label}</span>`;
+  let d, txt;
+  if (opts.pts) { d = cur - prev; txt = (d > 0 ? '+' : '') + d.toFixed(1) + ' pts'; }
+  else {
+    if (!prev) return cur ? `<span class="muted">none in previous ${opts.label}</span>` : `<span class="muted">${opts.label}</span>`;
+    d = (cur - prev) / prev * 100; txt = (d > 0 ? '+' : '') + Math.round(d) + '%';
+  }
+  if (Math.abs(d) < 0.5) return `<span class="muted">no change vs previous ${opts.label}</span>`;
+  const col = opts.neutral ? 'var(--muted)' : ((opts.lowerIsBetter ? d < 0 : d > 0) ? 'var(--green)' : 'var(--red)');
+  return `<span style="color:${col}">${txt} vs previous ${opts.label}</span>`;
+}
+
+function renderCallbackReport() {
+  const all = cbRows();
+  const thisMon = cbMonday(new Date()).getTime();
+  const minMon = all.length ? Math.min(...all.map(r => r.mon)) : thisMon;
+  const n = CB_STATE.period === 'all'
+    ? Math.max(1, Math.round((thisMon - minMon) / (7 * CB_DAY)) + 1)
+    : CB_STATE.period;
+
+  const weeks = [];
+  for (let i = n - 1; i >= 0; i--) weeks.push(cbAddWeeks(thisMon, -i));
+  const prevWeeks = CB_STATE.period === 'all' ? [] : weeks.map(w => cbAddWeeks(w, -n));
+  const wSet = new Set(weeks), pSet = new Set(prevWeeks);
+  const teamOk = r => !r.unrouted && teamInGroup(r.team, CB_STATE.team);
+
+  const cur  = all.filter(r => wSet.has(r.mon) && teamOk(r));
+  const prev = all.filter(r => pSet.has(r.mon) && teamOk(r));
+  const a = cbSum(cur), b = prevWeeks.length ? cbSum(prev) : null;
+  const lbl = CB_STATE.period === 'all' ? 'all weeks' : n + ' weeks';
+
+  // ---- Headline figures ----
+  document.getElementById('cbmReq').textContent = a.req.toLocaleString();
+  document.getElementById('cbmCb').textContent  = a.cb.toLocaleString();
+  document.getElementById('cbmNa').textContent  = a.na.toLocaleString();
+  const pctEl = document.getElementById('cbmPct');
+  pctEl.textContent = a.req ? a.pct.toFixed(1) + '%' : '—';
+  pctEl.style.color = a.req ? cbPctColour(a.pct) : 'var(--muted)';
+  document.getElementById('cbdReq').innerHTML = cbDelta(a.req, b && b.req, { label: lbl, neutral: true });
+  document.getElementById('cbdCb').innerHTML  = cbDelta(a.cb,  b && b.cb,  { label: lbl });
+  document.getElementById('cbdNa').innerHTML  = cbDelta(a.na,  b && b.na,  { label: lbl, lowerIsBetter: true });
+  document.getElementById('cbdPct').innerHTML = cbDelta(a.pct, b && b.req ? b.pct : null, { label: lbl, pts: true });
+
+  // ---- Unrouted warning (only if any remain) ----
+  const unr = CB_STATE.team === 'all' ? cbSum(all.filter(r => wSet.has(r.mon) && r.unrouted)).req : 0;
+  const note = document.getElementById('cbUnroutedNote');
+  note.style.display = unr ? 'block' : 'none';
+  note.textContent = unr ? `⚠ ${unr} callback${unr === 1 ? '' : 's'} in this period could not be matched to a team and are not included above.` : '';
+
+  // ---- Weekly trend chart ----
+  const perWeek = weeks.map(w => cbSum(cur.filter(r => r.mon === w)));
+  const labels = weeks.map(w => 'Wk ' + cbIsoWeek(new Date(w)) + (w === thisMon ? ' *' : ''));
+  if (charts.cb) charts.cb.destroy();
+  charts.cb = new Chart(document.getElementById('cbChart'), {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'Called back',     data: perWeek.map(s => s.cb), backgroundColor: '#15803d', stack: 's', order: 2 },
+      { label: 'Not called back', data: perWeek.map(s => s.na), backgroundColor: '#f87171', stack: 's', order: 2 },
+      { type: 'line', label: '% called back', data: perWeek.map(s => s.req ? Math.round(s.pct) : null),
+        borderColor: '#1d4ed8', backgroundColor: '#1d4ed8', yAxisID: 'y1', tension: 0.3, pointRadius: 3, spanGaps: true, order: 1 },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => ctx.dataset.yAxisID === 'y1' ? `% called back: ${ctx.parsed.y}%` : `${ctx.dataset.label}: ${ctx.parsed.y}` } }
+      },
+      scales: {
+        x:  { stacked: true, grid: { display: false } },
+        y:  { stacked: true, beginAtZero: true, grid: { color: 'rgba(0,0,0,.05)' }, ticks: { precision: 0 } },
+        y1: { position: 'right', min: 0, max: 100, grid: { display: false }, ticks: { callback: v => v + '%' } }
+      }
+    }
+  });
+
+  // ---- By team ----
+  const byTeam = {};
+  cur.forEach(r => { (byTeam[r.team] = byTeam[r.team] || []).push(r); });
+  const teamList = Object.entries(byTeam).map(([t, rs]) => ({ t, s: cbSum(rs) })).sort((x, y) => y.s.req - x.s.req);
+  document.getElementById('cbTeams').innerHTML = teamList.length
+    ? '<div class="cb-team-row head"><span>Team</span><span>Called back</span><span style="text-align:right">Requests</span><span style="text-align:right">%</span></div>' +
+      teamList.map(({ t, s }) => {
+        const col = CB_TEAM_COLOURS[t] || '#374151';
+        return `<div class="cb-team-row">
+          <span><span class="team-pill" style="background:${col}18;color:${col}">${t}</span></span>
+          <span class="cb-bar"><span style="width:${Math.round(s.pct)}%;background:${cbPctColour(s.pct)}"></span></span>
+          <span style="text-align:right">${s.req}</span>
+          <span style="text-align:right;color:${cbPctColour(s.pct)};font-weight:600">${Math.round(s.pct)}%</span>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--subtle);font-size:11px;padding:8px 0">No callbacks in this period</div>';
+
+  // ---- Week detail ----
+  CB_STATE.ctx = weeks.map((w, i) => ({ w, s: perWeek[i], rows: cur.filter(r => r.mon === w) })).filter(x => x.s.req > 0).reverse();
+  cbRenderDetail();
+
+  // ---- Controls (onclick assignment, so safe to re-run on Refresh) ----
+  document.getElementById('cbPeriodTabs').onclick = e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    document.querySelectorAll('#cbPeriodTabs .tab').forEach(t => t.classList.toggle('active', t === btn));
+    CB_STATE.period = btn.dataset.p === 'all' ? 'all' : Number(btn.dataset.p);
+    CB_STATE.showAll = false;
+    renderCallbackReport();
+  };
+  document.getElementById('cbTeamTabs').onclick = e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    document.querySelectorAll('#cbTeamTabs .tab').forEach(t => t.classList.toggle('active', t === btn));
+    CB_STATE.team = btn.dataset.cbteam;
+    renderCallbackReport();
+  };
+}
+
+function cbRenderDetail() {
+  const list = CB_STATE.ctx || [];
+  const shown = CB_STATE.showAll ? list : list.slice(0, 4);
+  let html = '';
+  shown.forEach(x => {
+    const start = new Date(x.w), end = new Date(x.w); end.setDate(end.getDate() + 6);
+    const open = !!CB_STATE.open[x.w];
+    html += `<tr class="cb-week-row${open ? ' open' : ''}" data-mon="${x.w}">
+      <td class="l"><strong>Week ${cbIsoWeek(start)}</strong> <span class="muted">${start.getDate()}/${start.getMonth() + 1}–${end.getDate()}/${end.getMonth() + 1}</span></td>
+      <td>${x.s.req}</td>
+      <td style="color:var(--green);font-weight:500">${x.s.cb || '—'}</td>
+      <td style="color:var(--red);font-weight:500">${x.s.na || '—'}</td>
+      <td style="color:${cbPctColour(x.s.pct)};font-weight:600">${Math.round(x.s.pct)}%</td>
+    </tr>`;
+    if (open) {
+      const g = {};
+      x.rows.forEach(r => {
+        const k = r.d.getTime() + '|' + r.team;
+        if (!g[k]) g[k] = { d: r.d, team: r.team, req: 0, cb: 0 };
+        g[k].req += r.req; g[k].cb += r.cb;
+      });
+      Object.values(g).sort((p, q) => p.d - q.d || q.req - p.req).forEach(z => {
+        const p = z.req ? z.cb / z.req * 100 : 0;
+        const col = CB_TEAM_COLOURS[z.team] || '#374151';
+        html += `<tr class="cb-day-row">
+          <td class="l">${cbFmtDay(z.d)} <span class="team-pill" style="background:${col}18;color:${col};font-size:9px;margin-left:6px">${z.team}</span></td>
+          <td>${z.req}</td><td>${z.cb || '—'}</td><td>${(z.req - z.cb) || '—'}</td>
+          <td style="color:${cbPctColour(p)}">${Math.round(p)}%</td>
+        </tr>`;
+      });
+    }
+  });
+  document.getElementById('cbBody').innerHTML = html ||
+    '<tr><td colspan="5" style="text-align:center;color:var(--subtle);padding:1rem">No callbacks in this period</td></tr>';
+
+  document.querySelectorAll('#cbBody tr.cb-week-row').forEach(tr => {
+    tr.onclick = () => { const k = tr.dataset.mon; CB_STATE.open[k] = !CB_STATE.open[k]; cbRenderDetail(); };
+  });
+
+  const more = document.getElementById('cbMore');
+  more.innerHTML = list.length > 4
+    ? `<button class="tab" id="cbMoreBtn">${CB_STATE.showAll ? 'Show fewer weeks' : 'Show all ' + list.length + ' weeks'}</button>`
+    : '';
+  const btn = document.getElementById('cbMoreBtn');
+  if (btn) btn.onclick = () => { CB_STATE.showAll = !CB_STATE.showAll; cbRenderDetail(); };
+}
+  
 // ============================================================
 // BOOT
 // ============================================================
