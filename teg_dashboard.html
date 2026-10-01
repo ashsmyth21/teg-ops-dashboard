@@ -1050,57 +1050,66 @@ async function loadDashboard() {
 
     const agents = buildAgents(currentWeek);
 
+    // ============================================================
+    // OUTBOUND CONNECTION RATE — counted by AGENT (cfg_agents team), not by team phone number.
+    // Agents ring out from their own lines, so team-number sheets under-count (Support + Revered showed 0).
+    // Source 1: 'call volumes' (per agent, per week) — same figures as the agent master report.
+    // Source 2: raw_calls — talk time always; counts only if a team has no call-volumes rows that week.
+    // ============================================================
     function buildOutboundSummary(week) {
-      const _sOut=parseOutboundRaw(globalData.supportOut||supportOut);
-      const _rOut=parseOutboundRaw(globalData.reveredOut||reveredOut);
-      const _oOut=parseOutboundRaw(globalData.onboardOut||onboardOut);
-      const _rkOut=parseOutboundRaw(globalData.riskOut||riskOut);
-      const _cOut=parseOutboundRaw(globalData.creditOut||creditOut);
-      const allSheetWks=[..._sOut,..._rOut,..._oOut,..._rkOut,..._cOut].map(r=>r.wk).filter(w=>w>0);
-      const latestSheetWk=allSheetWks.length?Math.max(...allSheetWks):0;
-      function getRow(parsed) { if(!parsed.length) return null; const selWk=(!week||week==='latest')?latestSheetWk:Number(week); return parsed.find(r=>r.wk===selWk)||null; }
-      const selWkNum=(!week||week==='latest')?getLatestDataWeek():Number(week);
-      const rawOut={supportrev:{total:0,conn:0},onboarding:{total:0,conn:0},risk:{total:0,conn:0},credit:{total:0,conn:0},secondline:{total:0,conn:0}};
-      const rcRows=globalData.rawCallsRows||[];
-      if (rcRows.length>1) {
-        const rh=rcRows[0].map(h=>String(h).trim());
-        const rDir=rh.indexOf('direction'),rStart=rh.indexOf('started_at'),rAns=rh.indexOf('answered_at');
-        const rUser=rh.indexOf('user_name'),rDur=rh.indexOf('duration');
-        const {wkStart,wkEnd}=isoWeekToRange(selWkNum);
-        const agMap=globalData.agentTeamMap||{};
-        const KEY_MAP={'Support':'supportrev','Support Revered':'supportrev','Support + Revered':'supportrev','Onboarding':'onboarding','Onboarding stage 1 calls':'onboarding','Risk and compliance':'risk','Credit Control':'credit','Support - Credit Control':'credit','2nd line (Tech support team)':'secondline'};
-        for (let i=1;i<rcRows.length;i++) {
-          const row=rcRows[i]; const ts=Number(row[rStart]);
-          if (!ts||ts<wkStart||ts>=wkEnd) continue;
-          if (String(row[rDir]||'').trim()!=='outbound') continue;
-          const agentTm=agMap[String(row[rUser]||'').trim()]||'';
-          const key=KEY_MAP[agentTm]; if(!key) continue;
-          const ans=row[rAns]!==''&&row[rAns]!=null; const dur=Number(row[rDur]||0);
-          rawOut[key].total++; if(ans&&dur>=10) rawOut[key].conn++;
+      const cvWeeks = [...new Set(cvRows.map(r => Number(r['Week'])).filter(w => w))].sort((a, b) => a - b);
+      const wk = (!week || week === 'latest') ? (cvWeeks[cvWeeks.length - 1] || getCurrentISOWeek()) : Number(week);
+      const GROUPS = [
+        { key:'supportrev', label:'Support + Revered', g:'support'    },
+        { key:'onboarding', label:'Onboarding',        g:'onboarding' },
+        { key:'risk',       label:'Risk',              g:'risk'       },
+        { key:'credit',     label:'Credit ctrl',       g:'credit'     },
+        { key:'secondline', label:'2nd line',          g:'secondline' },
+      ];
+      const res = {};
+      GROUPS.forEach(x => { res[x.key] = { total:0, conn:0, talk:0, fromCv:false }; });
+      const groupOf = name => {
+        const t = agentTeamMap[String(name || '').trim()] || '';
+        const hit = GROUPS.find(x => teamInGroup(t, x.g));
+        return hit ? hit.key : null;
+      };
+
+      // 1) Call volumes sheet (per agent)
+      cvRows.filter(r => Number(r['Week']) === wk).forEach(r => {
+        const k = groupOf(r['User']); if (!k) return;
+        res[k].total += Number(r['Outbound calls'] || r['Outbound'] || 0);
+        res[k].conn  += Number(r['Connected outbound calls'] || r['Connected outbound'] || 0);
+        res[k].fromCv = true;
+      });
+
+      // 2) Raw calls (per agent): talk time, plus counts where call volumes has nothing
+      const rc = rawCallsRows || [];
+      if (rc.length > 1) {
+        const h = rc[0].map(x => String(x).trim());
+        const iDir=h.indexOf('direction'), iSt=h.indexOf('started_at'), iAns=h.indexOf('answered_at'),
+              iEnd=h.indexOf('ended_at'), iUser=h.indexOf('user_name'), iDur=h.indexOf('duration');
+        const { wkStart, wkEnd } = isoWeekToRange(wk);
+        for (let i = 1; i < rc.length; i++) {
+          const row = rc[i]; const ts = Number(row[iSt]);
+          if (!ts || ts < wkStart || ts >= wkEnd) continue;
+          if (String(row[iDir] || '').trim() !== 'outbound') continue;
+          const k = groupOf(row[iUser]); if (!k) continue;
+          const ans = row[iAns] !== '' && row[iAns] != null;
+          if (!res[k].fromCv) { res[k].total++; if (ans && Number(row[iDur] || 0) >= 10) res[k].conn++; }
+          if (ans && row[iEnd] !== '' && row[iEnd] != null) {
+            const secs = Number(row[iEnd]) - Number(row[iAns]);
+            if (secs > 0) res[k].talk += secs;
+          }
         }
       }
-      const OUTBOUND_TEAMS=[
-        {key:'supportrev',label:'Support + Revered',sheets:[_sOut,_rOut]},
-        {key:'onboarding',label:'Onboarding',sheets:[_oOut]},
-        {key:'risk',label:'Risk',sheets:[_rkOut]},
-        {key:'credit',label:'Credit ctrl',sheets:[_cOut]},
-      ];
-      const allCvWeeks2=[...new Set(cvRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-      const latestCvWk2=Number(allCvWeeks2[allCvWeeks2.length-1]);
-      const selCvWk2=(!week||week==='latest')?latestCvWk2:Number(week);
-      const slAgents2=new Set(teamRows.filter(r=>String(r['team']||'').trim()==='2nd line (Tech support team)').map(r=>String(r['agent_name']||'').trim()));
-      let slTotal=0,slConn=0;
-      cvRows.filter(r=>Number(r['Week'])===selCvWk2).forEach(r=>{ if(!slAgents2.has(String(r['User']||'').trim())) return; slTotal+=Number(r['Outbound calls']||r['Outbound']||0); slConn+=Number(r['Connected outbound calls']||r['Connected outbound']||0); });
-      if (!slTotal) { slTotal=rawOut.secondline.total; slConn=rawOut.secondline.conn; }
-      const result=OUTBOUND_TEAMS.map(td=>{
-        let outTotal=0,outConn=0,outTalkTime='',hasSheetData=false;
-        td.sheets.forEach(parsed=>{ const r=getRow(parsed); if(r){outTotal+=r.total;outConn+=r.conn;if(!outTalkTime&&r.time) outTalkTime=r.time;hasSheetData=true;} });
-        if (!hasSheetData){outTotal=rawOut[td.key]?.total||0;outConn=rawOut[td.key]?.conn||0;}
-        const connPct=outTotal>0?outConn/outTotal*100:0;
-        return {key:td.key,label:td.label,outTotal,outConn,connPct,outTalkTime};
+
+      const toHms = s => { s = Math.round(s); return Math.floor(s / 3600) + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+      return GROUPS.map(x => {
+        const r = res[x.key];
+        return { key:x.key, label:x.label, outTotal:r.total, outConn:r.conn,
+                 connPct: r.total > 0 ? r.conn / r.total * 100 : 0,
+                 outTalkTime: r.talk > 0 ? toHms(r.talk) : '' };
       });
-      result.push({key:'secondline',label:'2nd line',outTotal:slTotal,outConn:slConn,connPct:slTotal>0?slConn/slTotal*100:0,outTalkTime:''});
-      return result;
     }
     const outboundSummary = buildOutboundSummary('latest');
 
