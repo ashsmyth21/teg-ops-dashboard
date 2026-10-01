@@ -224,6 +224,18 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
 .cb-day-row td{background:#fafbff;font-size:10px;color:var(--muted);padding:3px 6px}
 .cb-day-row td:first-child{padding-left:24px;color:var(--text)}
 .cb-day-row:last-child td{border-bottom:2px solid var(--border)}
+
+/* Callback report (v2) */
+.cb-controls{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cb-note{margin-top:10px;background:var(--amber-light);color:var(--amber);border:1px solid #fde68a;border-radius:6px;padding:6px 10px;font-size:11px}
+.cb-sub{font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px}
+.cb-sub span{font-weight:400;color:var(--subtle);margin-left:4px}
+.cb-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:24px}
+.cb-team-row{display:grid;grid-template-columns:170px 1fr 50px 50px;gap:8px;align-items:center;font-size:11px;padding:6px 0;border-bottom:1px solid var(--border)}
+.cb-team-row.head{color:var(--muted);font-size:10px}
+.cb-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
+.cb-bar>span{display:block;height:6px;border-radius:3px}
+@media(max-width:1000px){.cb-split{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -359,7 +371,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div class="card" style="margin-bottom:12px"><div id="outHeatmap" class="heat-grid"></div></div>
 
-    <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
+    <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score — all for the selected week. Mid-week, scores are measured against the working days so far. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
     <div id="weekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
       <div class="tabs" id="weekTabs" style="margin-bottom:0">
@@ -424,18 +436,6 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
 
     <!-- CALLBACK REPORT (v2) -->
-    <style>
-      .cb-controls{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-      .cb-note{margin-top:10px;background:var(--amber-light);color:var(--amber);border:1px solid #fde68a;border-radius:6px;padding:6px 10px;font-size:11px}
-      .cb-sub{font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px}
-      .cb-sub span{font-weight:400;color:var(--subtle);margin-left:4px}
-      .cb-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:24px}
-      .cb-team-row{display:grid;grid-template-columns:170px 1fr 50px 50px;gap:8px;align-items:center;font-size:11px;padding:6px 0;border-bottom:1px solid var(--border)}
-      .cb-team-row.head{color:var(--muted);font-size:10px}
-      .cb-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
-      .cb-bar>span{display:block;height:6px;border-radius:3px}
-      @media(max-width:1000px){.cb-split{grid-template-columns:1fr}}
-    </style>
     <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Callers who pressed * to request a callback — ops teams only. Pick a period and team; click a week to see its days." data-update="Daily at 5am">i</button></div>
     <div class="card" style="margin-bottom:24px">
       <div class="cb-controls">
@@ -477,6 +477,8 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
         </div>
       </div>
     </div>
+  </div>
+</div>
 
 <!-- Settings Modal -->
 <div class="modal-overlay" id="settingsModal">
@@ -513,13 +515,15 @@ const LUNCH_TOLERANCE = 300;
 const BRIDGE_STATUSES = ['out_for_lunch','on_a_break'];
 
 const TEAM_COLORS = {
-  'Support + Revered':'#1d4ed8','Support':'#1d4ed8','Revered':'#0e7490','Onboarding':'#15803d','Risk and compliance':'#b45309',
-  'Key Accounts VIP Response Team':'#be185d','Credit Control':'#7c3aed',
+  'Support + Revered':'#1d4ed8','Support':'#1d4ed8','Revered':'#0e7490','Support Revered':'#0e7490',
+  'Onboarding':'#15803d','Onboarding stage 1 calls':'#166534','Risk and compliance':'#b45309',
+  'Key Accounts VIP Response Team':'#be185d','Credit Control':'#7c3aed','Support - Credit Control':'#7c3aed',
   'Smartbook members':'#374151','2nd line (Tech support team)':'#c2410c',
 };
 const TEAM_SHORT = {
-  'Support + Revered':'Support+Rev','Support':'Support','Revered':'Revered','Onboarding':'Onboarding','Risk and compliance':'Risk',
-  'Key Accounts VIP Response Team':'Key accts','Credit Control':'Credit ctrl',
+  'Support + Revered':'Support+Rev','Support':'Support','Revered':'Revered','Support Revered':'Revered',
+  'Onboarding':'Onboarding','Onboarding stage 1 calls':'Onboarding S1','Risk and compliance':'Risk',
+  'Key Accounts VIP Response Team':'Key accts','Credit Control':'Credit ctrl','Support - Credit Control':'Credit ctrl',
   'Smartbook members':'Smartbook','2nd line (Tech support team)':'2nd line',
 };
 
@@ -786,7 +790,7 @@ const DAY_CHART_INBOUND_TEAMS = new Set(['Support','Support Revered','Onboarding
 const DAY_CHART_INBOUND_NUMS  = new Set(['286844','286845','286847','286848','192211','201178','1216204','326618']);
 const DAY_CHART_OUTBOUND_AGENTS = new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']);
 
-  // ============================================================
+// ============================================================
 // OPS TEAM ALLOW-LIST (agent master report + callback report)
 // ============================================================
 const OPS_TEAM_GROUPS = {
@@ -799,8 +803,6 @@ const OPS_TEAM_GROUPS = {
 const OPS_TEAMS = new Set(Object.values(OPS_TEAM_GROUPS).flat());
 function isOpsTeam(t) { return OPS_TEAMS.has(String(t||'').trim()); }
 function teamInGroup(t, g) { return g === 'all' || (OPS_TEAM_GROUPS[g]||[]).includes(String(t||'').trim()); }
-const CB_TAB_LABELS = { support:'Support', onboarding:'Onboarding', risk:'Risk', credit:'Credit control', secondline:'2nd line', unrouted:'Unrouted' };
-const CB_TAB_COLORS = { support:'#1d4ed8', onboarding:'#15803d', risk:'#b45309', credit:'#7c3aed', secondline:'#c2410c', unrouted:'#6b7280' };
 
 // ============================================================
 // GLOBAL STATE
@@ -948,91 +950,105 @@ async function loadDashboard() {
     const agentTeam = {};
     teamRows.forEach(r => { const name=String(r['agent_name']||'').trim(); const team=String(r['team']||'').trim(); if(name&&team) agentTeam[name]=team; });
 
-    const cvMap = {};
-    const allCvWeeks = [...new Set(cvRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-    const latestCvWeek = allCvWeeks[allCvWeeks.length-1];
-    const selectedCvWeek = (currentWeek==='latest'||!currentWeek) ? latestCvWeek : Number(currentWeek);
-    cvRows.filter(r=>Number(r['Week'])===selectedCvWeek).forEach(r=>{ const name=String(r['User']||'').trim(); if(name) cvMap[name]=r; });
-
-    const zdMap = {};
-    const currentIsoWk = getCurrentISOWeek();
-    zdRows.filter(r=>Number(r['Week'])===currentIsoWk).forEach(r=>{ const name=String(r['Agent name']||'').trim(); if(!name) return; if(!zdMap[name]) zdMap[name]={internal:0,public:0,solved:0}; zdMap[name].internal+=Number(r['Internal comments'])||0; zdMap[name].public+=Number(r['Public comments'])||0; zdMap[name].solved+=Number(r['Tickets solved'])||0; });
-
     const _aiMap = {};
     aiRows.forEach(r=>{ const name=String(r['Agent name']||'').trim(); if(name) _aiMap[name]=String(r['Summary']||''); });
 
-    const _rawCallCounts = {};
-    const _talkTimeMap   = {};
-    if (rawCallsRows && rawCallsRows.length > 1) {
-      const rcHdrs = rawCallsRows[0].map(h=>String(h).trim());
-      const rcDir=rcHdrs.indexOf('direction'), rcAns=rcHdrs.indexOf('answered_at');
-      const rcUser=rcHdrs.indexOf('user_name'), rcDur=rcHdrs.indexOf('duration');
-      const rcSt=rcHdrs.indexOf('started_at'), rcEnd=rcHdrs.indexOf('ended_at');
-      const selWk3 = currentIsoWk;
-      const { wkStart:wkStartc, wkEnd:wkEndc } = isoWeekToRange(selWk3);
-      for (let i=1;i<rawCallsRows.length;i++) {
-        const row=rawCallsRows[i];
-        const ts=Number(row[rcSt]);
-        if (!ts||ts<wkStartc||ts>=wkEndc) continue;
-        const user=String(row[rcUser]||'').trim(); if(!user) continue;
-        const dir=String(row[rcDir]||'').trim();
-        const ans=row[rcAns]!==''&&row[rcAns]!=null;
-        const dur=Number(row[rcDur]||0);
-        if (!_rawCallCounts[user]) _rawCallCounts[user]={answeredInbound:0,connectedOutbound:0,totalOutbound:0};
-        if (dir==='inbound'&&ans) _rawCallCounts[user].answeredInbound++;
-        if (dir==='outbound') { _rawCallCounts[user].totalOutbound++; if(ans&&dur>=10) _rawCallCounts[user].connectedOutbound++; }
-        const ansV=row[rcAns]; const endV=row[rcEnd];
-        if (ansV&&endV&&ansV!==''&&endV!=='') {
-          const talkSecs=Number(endV)-Number(ansV);
-          if (talkSecs>0) { if(!_talkTimeMap[user]) _talkTimeMap[user]={inbound:0,outbound:0}; if(dir==='inbound') _talkTimeMap[user].inbound+=talkSecs; if(dir==='outbound') _talkTimeMap[user].outbound+=talkSecs; }
+    const latestAgentWeek = Math.max(0, ...agentStatsRows.map(r => Number(r['Week']) || 0));
+
+    // ============================================================
+    // AGENT MASTER REPORT — built for ONE week.
+    // Availability, call counts, talk time and Zendesk all use the same week.
+    // ============================================================
+    function buildAgents(week) {
+      const wk = (!week || week === 'latest' || week === 'custom') ? latestAgentWeek : Number(week);
+      const isPart = wk === getCurrentISOWeek();
+      const daysElapsed = isPart ? Math.min(5, ((new Date().getDay() + 6) % 7) + 1) : 5;
+      const contracted = CONTRACTED_SECS * daysElapsed / 5;
+
+      // Call volumes sheet (same week)
+      const cvMap = {};
+      cvRows.filter(r => Number(r['Week']) === wk).forEach(r => { const n = String(r['User']||'').trim(); if (n) cvMap[n] = r; });
+
+      // Zendesk (same week)
+      const zdMap = {};
+      zdRows.filter(r => Number(r['Week']) === wk).forEach(r => {
+        const n = String(r['Agent name']||'').trim(); if (!n) return;
+        if (!zdMap[n]) zdMap[n] = { internal:0, public:0, solved:0 };
+        zdMap[n].internal += Number(r['Internal comments'])||0;
+        zdMap[n].public   += Number(r['Public comments'])||0;
+        zdMap[n].solved   += Number(r['Tickets solved'])||0;
+      });
+
+      // Raw calls (same week): fallback call counts + talk time
+      const rawCounts = {}, talk = {};
+      if (rawCallsRows && rawCallsRows.length > 1) {
+        const h = rawCallsRows[0].map(x => String(x).trim());
+        const iDir=h.indexOf('direction'), iAns=h.indexOf('answered_at'), iUser=h.indexOf('user_name'),
+              iDur=h.indexOf('duration'), iSt=h.indexOf('started_at'), iEnd=h.indexOf('ended_at');
+        const { wkStart, wkEnd } = isoWeekToRange(wk);
+        for (let i = 1; i < rawCallsRows.length; i++) {
+          const row = rawCallsRows[i];
+          const ts = Number(row[iSt]);
+          if (!ts || ts < wkStart || ts >= wkEnd) continue;
+          const user = String(row[iUser]||'').trim(); if (!user) continue;
+          const dir = String(row[iDir]||'').trim();
+          const ans = row[iAns] !== '' && row[iAns] != null;
+          const dur = Number(row[iDur]||0);
+          if (!rawCounts[user]) rawCounts[user] = { answeredInbound:0, connectedOutbound:0, totalOutbound:0 };
+          if (dir === 'inbound' && ans) rawCounts[user].answeredInbound++;
+          if (dir === 'outbound') { rawCounts[user].totalOutbound++; if (ans && dur >= 10) rawCounts[user].connectedOutbound++; }
+          if (ans && row[iEnd] !== '' && row[iEnd] != null) {
+            const secs = Number(row[iEnd]) - Number(row[iAns]);
+            if (secs > 0) {
+              if (!talk[user]) talk[user] = { inbound:0, outbound:0 };
+              if (dir === 'inbound')  talk[user].inbound  += secs;
+              if (dir === 'outbound') talk[user].outbound += secs;
+            }
+          }
         }
       }
+
+      // Availability (agent stats, same week)
+      const agg = {};
+      agentStatsRows.forEach(r => {
+        if (Number(r['Week']) !== wk) return;
+        const name = String(r['Agent Name']||'').trim();
+        if (!name || name === 'null' || name === 'Agent Name') return;
+        if (!agg[name]) agg[name] = {};
+        const add = (k, c) => { agg[name][k] = (agg[name][k]||0) + parseTimeSec(r[c]); };
+        add('available','Available'); add('in_call','In call'); add('after_call_work','After Call Work');
+        add('on_a_break','On break'); add('out_for_lunch','Out for lunch'); add('in_training','In training');
+        add('doing_back_office','Back Office'); add('do_not_disturb','Do not disturb');
+      });
+
+      return Object.entries(agg).map(([name, s]) => {
+        const cv = cvMap[name] || null, zd = zdMap[name] || null, ai = _aiMap[name] || null, rc = rawCounts[name] || null;
+        const inb      = cv ? Number(cv['Answered inbound calls'] || cv['Answered inbound'] || 0)   : (rc ? rc.answeredInbound : 0);
+        const out      = cv ? Number(cv['Connected outbound calls'] || cv['Connected outbound'] || 0) : (rc ? rc.connectedOutbound : 0);
+        const totalOut = cv ? Number(cv['Outbound calls'] || cv['Outbound'] || 0)                     : (rc ? rc.totalOutbound : 0);
+        const gs = k => s[k] || 0;
+        const allowedAcw    = (inb + out) * 180;
+        const investigation = (out * 60) + (inb * 30);
+        const excessAcw     = Math.max(0, gs('after_call_work') - allowedAcw);
+        const callProd = Math.max(0, gs('in_call') + Math.min(gs('after_call_work'), allowedAcw) + investigation + gs('doing_back_office') + gs('in_training') - excessAcw);
+        const comments = zd ? (zd.internal + zd.public) : 0;
+        const callUtil = Math.min(Math.round(callProd / contracted * 100), 100);
+        const zdUtil   = Math.min(Math.round(comments * COMMENT_TIME / contracted * 100), 100);
+        const tt = talk[name] || { inbound:0, outbound:0 };
+        return { name, team: agentTeam[name] || '—', excess_acw: excessAcw, available: gs('available'), in_call: gs('in_call'),
+                 after_call_work: gs('after_call_work'), allowed_acw: allowedAcw, investigation,
+                 doing_back_office: gs('doing_back_office'), in_training: gs('in_training'),
+                 out_for_lunch: gs('out_for_lunch'), on_a_break: gs('on_a_break'),
+                 inbound_calls: inb, outbound_calls: out, total_outbound: totalOut, callUtil, zdUtil, partWeek: isPart, cv, zd, ai,
+                 talk_inbound: tt.inbound, talk_outbound: tt.outbound };
+      }).filter(a => {
+        if (isOpsTeam(a.team)) return true;
+        console.info('Agent report: excluded', a.name, '→', a.team);
+        return false;
+      }).sort((a, b) => (b.callUtil + b.zdUtil) - (a.callUtil + a.zdUtil));
     }
 
-    const agentAgg = {};
-    const allWeeks = [...new Set(agentStatsRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-    const latestWeek = allWeeks[allWeeks.length-1];
-    const selectedWeek = (currentWeek==='latest'||!currentWeek) ? latestWeek : Number(currentWeek);
-    agentStatsRows.forEach(r=>{
-      if (Number(r['Week'])!==selectedWeek) return;
-      const name=String(r['Agent Name']||'').trim();
-      if (!name||name==='null'||name==='Agent Name') return;
-      if (!agentAgg[name]) agentAgg[name]={};
-      const agg=agentAgg[name];
-      const addSec=(key,col)=>{ agg[key]=(agg[key]||0)+parseTimeSec(r[col]); };
-      addSec('available','Available'); addSec('in_call','In call'); addSec('after_call_work','After Call Work');
-      addSec('on_a_break','On break'); addSec('out_for_lunch','Out for lunch'); addSec('in_training','In training');
-      addSec('doing_back_office','Back Office'); addSec('do_not_disturb','Do not disturb');
-    });
-
-    const agents = Object.entries(agentAgg).map(([name,s])=>{
-      const cv=cvMap[name]||null; const zd=zdMap[name]||null; const ai=_aiMap[name]||null;
-      const _rc=_rawCallCounts[name]||null;
-      const inb=cv?(Number(cv['Answered inbound calls']||cv['Answered inbound']||0)):(_rc?_rc.answeredInbound:0);
-      const out=cv?(Number(cv['Connected outbound calls']||cv['Connected outbound']||0)):(_rc?_rc.connectedOutbound:0);
-      const totalOut=cv?(Number(cv['Outbound calls']||cv['Outbound']||0)):(_rc?_rc.totalOutbound:0);
-      const gs=k=>s[k]||0;
-      const allowedAcw=(inb+out)*180;
-      const investigation=(out*60)+(inb*30);
-      const excessAcw=Math.max(0,gs('after_call_work')-allowedAcw);
-      const callProd=Math.max(0,gs('in_call')+Math.min(gs('after_call_work'),allowedAcw)+investigation+gs('doing_back_office')+gs('in_training')-excessAcw);
-      const comments=zd?(zd.internal+zd.public):0;
-      const zdProd=comments*COMMENT_TIME;
-      const callUtil=Math.min(Math.round(callProd/CONTRACTED_SECS*100),100);
-      const zdUtil=Math.min(Math.round(zdProd/CONTRACTED_SECS*100),100);
-      const team=agentTeam[name]||'—';
-      const _tt=_talkTimeMap[name]||{inbound:0,outbound:0};
-      return { name,team,excess_acw:excessAcw,available:gs('available'),in_call:gs('in_call'),
-               after_call_work:gs('after_call_work'),allowed_acw:allowedAcw,investigation,
-               doing_back_office:gs('doing_back_office'),in_training:gs('in_training'),
-               out_for_lunch:gs('out_for_lunch'),on_a_break:gs('on_a_break'),
-               inbound_calls:inb,outbound_calls:out,total_outbound:totalOut,callUtil,zdUtil,partWeek:false,cv,zd,ai,
-               talk_inbound:_tt.inbound,talk_outbound:_tt.outbound };
-        }).filter(a => {
-      if (isOpsTeam(a.team)) return true;
-      console.info('Agent report: excluded', a.name, '→', a.team);
-      return false;
-    }).sort((a,b)=>(b.callUtil+b.zdUtil)-(a.callUtil+a.zdUtil));
+    const agents = buildAgents(currentWeek);
 
     function buildOutboundSummary(week) {
       const _sOut=parseOutboundRaw(globalData.supportOut||supportOut);
@@ -1088,15 +1104,9 @@ async function loadDashboard() {
     }
     const outboundSummary = buildOutboundSummary('latest');
 
-    const extractTeamSummary=(inR,outR)=>({
-      inbound:Number(inR[0]?.['Inbound calls']||0),answered:Number(inR[0]?.['Answered inbound']||0),
-      missed:Number(inR[0]?.['Unanswered inbound calls']||0),outbound:Number(outR[0]?.['Outbound calls']||0),
-      connOut:Number(outR[0]?.['Outbound calls (connected calls > x sec)']||0),
-    });
-
     globalData = { totals,dayOrder,dayData,companyRows,teamSummary,agents,cbRows,weekNum:agentStatsRows[0]?.['Week']||'—',
       agentStatsRows,cvRows,zdRows,teamRows,agentTeamMap,aiMap:_aiMap,teamDefs,
-      buildTeamSummary,buildOutboundSummary,outboundSummary,
+      buildTeamSummary,buildOutboundSummary,outboundSummary,buildAgents,
       supportOut,reveredOut,onboardOut,riskOut,creditOut,rawCallsRows,
       availableWeeks:[...new Set(agentStatsRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b)) };
 
@@ -1134,7 +1144,7 @@ function renderDashboard() {
   if (teamWeekTabsEl) {
     const tmWeeks = globalData.availableWeeks||[];
     teamWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' + tmWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    teamWeekTabsEl.addEventListener('click', e=>{
+    teamWeekTabsEl.onclick = e=>{
       const btn=e.target.closest('.tab'); if(!btn) return;
       document.querySelectorAll('#teamWeekTabs .tab').forEach(t=>t.classList.remove('active'));
       btn.classList.add('active');
@@ -1144,7 +1154,7 @@ function renderDashboard() {
         const tc=TC[t.key]||'#888'; const ac=t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
         return `<div class="team-card"><div class="tc-name" style="color:${tc}">${t.label}</div><div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div><div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div><div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div><div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div><div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div></div>`;
       }).join('');
-    });
+    };
   }
 
   // ---- Answer rate week filter ----
@@ -1152,7 +1162,7 @@ function renderDashboard() {
   if (answerWeekTabsEl&&globalData.teamDefs) {
     const inWeeks=globalData.availableWeeks||[];
     answerWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+inWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    answerWeekTabsEl.addEventListener('click',e=>{
+    answerWeekTabsEl.onclick = e=>{
       const btn=e.target.closest('.tab'); if(!btn) return;
       document.querySelectorAll('#answerWeekTabs .tab').forEach(t=>t.classList.remove('active'));
       btn.classList.add('active');
@@ -1164,33 +1174,34 @@ function renderDashboard() {
       charts.answer.data.datasets[1].backgroundColor=newSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626');
       window._answerTeamSummary=newSummary;
       charts.answer.update();
-    });
+    };
     window._answerTeamSummary=teamSummary;
   }
 
-  // ---- Agent week filter ----
+  // ---- Agent week filter (recalculates the whole agent report for the chosen week) ----
   const weekTabsEl=document.getElementById('weekTabs');
   const weeks=globalData.availableWeeks||[];
   weekTabsEl.innerHTML=['<button class="tab'+(currentWeek==="latest"?' active':'')+'" data-week="latest">Latest</button>',...weeks.map(w=>'<button class="tab'+(currentWeek==w?' active':'')+'" data-week="'+w+'">Wk '+w+'</button>')].join('');
-  weekTabsEl.addEventListener('click',e=>{
+  weekTabsEl.onclick = e=>{
     const btn=e.target.closest('.tab'); if(!btn) return;
     document.querySelectorAll('#weekTabs .tab').forEach(t=>t.classList.remove('active'));
     btn.classList.add('active');
     currentWeek=btn.dataset.week;
+    globalData.agents = globalData.buildAgents(currentWeek);
     renderAgents(currentAgentTeam);
-  });
+  };
 
   // ---- Heatmap week filter ----
   const heatWeekTabsEl=document.getElementById('heatWeekTabs');
   heatWeekTabsEl.innerHTML=['<button class="tab'+(currentHeatWeek==="latest"?' active':'')+'" data-week="latest">Latest</button>',...weeks.map(w=>'<button class="tab'+(currentHeatWeek==w?' active':'')+'" data-week="'+w+'">Wk '+w+'</button>')].join('');
-  heatWeekTabsEl.addEventListener('click',e=>{
+  heatWeekTabsEl.onclick = e=>{
     const btn=e.target.closest('.tab'); if(!btn) return;
     document.querySelectorAll('#heatWeekTabs .tab').forEach(t=>t.classList.remove('active'));
     btn.classList.add('active');
     currentHeatWeek=btn.dataset.week;
     buildHeatmapsForWeek(currentHeatWeek);
     renderHeatmap(currentHeatTeam);
-  });
+  };
 
   // ---- Overview metrics ----
   function buildOpsTotals(week) {
@@ -1218,7 +1229,7 @@ function renderDashboard() {
     const t=buildOpsTotals(week);
     document.getElementById('mTotal').textContent=t.total.toLocaleString();
     document.getElementById('mMissed').textContent=t.missed.toLocaleString();
-    document.getElementById('mMissedPct').textContent=t.total>0?((t.missed/t.inbound)*100).toFixed(1)+'% of inbound':'—';
+    document.getElementById('mMissedPct').textContent=t.inbound>0?((t.missed/t.inbound)*100).toFixed(1)+'% of inbound':'—';
     document.getElementById('mInbound').textContent=t.inbound.toLocaleString();
     document.getElementById('mInboundPct').textContent=t.total>0?((t.inbound/t.total)*100).toFixed(1)+'% of total':'—';
     document.getElementById('mOutbound').textContent=t.outbound.toLocaleString();
@@ -1230,7 +1241,7 @@ function renderDashboard() {
   if (overviewWeekTabsEl) {
     const ovWeeks=globalData.availableWeeks||[];
     overviewWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+ovWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    overviewWeekTabsEl.addEventListener('click',e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#overviewWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); renderOverview(btn.dataset.week); });
+    overviewWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#overviewWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); renderOverview(btn.dataset.week); };
   }
 
   // ---- Team grid ----
@@ -1305,9 +1316,9 @@ function renderDashboard() {
   if (dayWeekTabsEl) {
     const dayWeeks=globalData.availableWeeks||[];
     dayWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+dayWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    dayWeekTabsEl.addEventListener('click',e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#dayWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); const newDayData=buildDayDataFromRaw(btn.dataset.week,currentDayTeam); charts.day.data=buildDayChartData(newDayData); charts.day.update(); });
+    dayWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#dayWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); const newDayData=buildDayDataFromRaw(btn.dataset.week,currentDayTeam); charts.day.data=buildDayChartData(newDayData); charts.day.update(); };
   }
-  document.getElementById('dayTeamTabs').addEventListener('click',e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#dayTeamTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); currentDayTeam=btn.dataset.team; const activeWeekBtn=document.querySelector('#dayWeekTabs .tab.active'); const selWeek=activeWeekBtn?activeWeekBtn.dataset.week:'latest'; const newDayData=buildDayDataFromRaw(selWeek,currentDayTeam); charts.day.data=buildDayChartData(newDayData); charts.day.update(); });
+  document.getElementById('dayTeamTabs').onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#dayTeamTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); currentDayTeam=btn.dataset.team; const activeWeekBtn=document.querySelector('#dayWeekTabs .tab.active'); const selWeek=activeWeekBtn?activeWeekBtn.dataset.week:'latest'; const newDayData=buildDayDataFromRaw(selWeek,currentDayTeam); charts.day.data=buildDayChartData(newDayData); charts.day.update(); };
 
   charts.answer=new Chart(document.getElementById('answerChart'),{type:'bar',data:{labels:teamSummary.map(t=>t.label),datasets:[{label:'Received',data:teamSummary.map(t=>t.inbound>0?100:0),backgroundColor:teamSummary.map(()=>'rgba(99,102,241,0.25)'),barPercentage:0.9,categoryPercentage:0.8},{label:'Answered %',data:teamSummary.map(t=>t.answerPct),backgroundColor:teamSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626'),barPercentage:0.9,categoryPercentage:0.8}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){const t=(window._answerTeamSummary||teamSummary)[ctx.dataIndex];if(ctx.datasetIndex===0) return `Received: ${t.inbound}`;return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.inTalkTime)}`;}}}} ,scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},y:{grid:{display:false}}}}});
 
@@ -1319,7 +1330,7 @@ function renderDashboard() {
   if (outWeekTabsEl) {
     const outWeeks=[...new Set([...(globalData.availableWeeks||[]),...parseOutboundRaw(globalData.supportOut||[]).map(r=>r.wk)])].filter(w=>w>0).sort((a,b)=>a-b);
     outWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+outWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    outWeekTabsEl.addEventListener('click',e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#outboundWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); const newOut=globalData.buildOutboundSummary(btn.dataset.week); window._outboundSummary=newOut; charts.outbound.data.labels=newOut.map(t=>t.label); charts.outbound.data.datasets[0].data=newOut.map(t=>t.outTotal>0?100:0); charts.outbound.data.datasets[0].backgroundColor=newOut.map(()=>'rgba(99,102,241,0.2)'); charts.outbound.data.datasets[1].data=newOut.map(t=>t.connPct); charts.outbound.update(); });
+    outWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#outboundWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); const newOut=globalData.buildOutboundSummary(btn.dataset.week); window._outboundSummary=newOut; charts.outbound.data.labels=newOut.map(t=>t.label); charts.outbound.data.datasets[0].data=newOut.map(t=>t.outTotal>0?100:0); charts.outbound.data.datasets[0].backgroundColor=newOut.map(()=>'rgba(99,102,241,0.2)'); charts.outbound.data.datasets[1].data=newOut.map(t=>t.connPct); charts.outbound.update(); };
   }
 
   renderHeatmap(currentHeatTeam);
@@ -1328,111 +1339,7 @@ function renderDashboard() {
   document.getElementById('aiBriefPanel').style.display='block';
   updateKeyDot();
 
-  // ============================================================
-  // CALLBACK REPORT — team filter + day expand
-  // ============================================================
-  let cbTeamFilter = 'all';
-
-  function parseDateParts(dateStr) {
-    if (!dateStr) return null;
-    const n = Number(dateStr);
-    if (!isNaN(n) && n > 40000) {
-      const d = new Date((n - 25569) * 86400000);
-      return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-    }
-    const s = String(dateStr).trim();
-    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (iso) return new Date(Number(iso[1]), Number(iso[2])-1, Number(iso[3]));
-    const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (dmy) return new Date(Number(dmy[3]), Number(dmy[2])-1, Number(dmy[1])); // DD/MM/YYYY
-    return null;
-  }
-  function renderCallbacks(teamFilter) {
-    const TEAM_COLORS_CB = { 'Support':'#1d4ed8', 'Unrouted':'#6b7280', 'Risk and compliance':'#b45309' };
-    const DAYS_OF_WEEK = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    const cbByWeek = {};
-
-    (globalData.cbRows || []).forEach(r => {
-      const week = r['Week'] || r['week 22'];
-      if (!week) return;
-      const rowTeam = String(r['Team'] || '').trim();
-            const isUnrouted = !rowTeam || rowTeam === 'Unrouted';
-      if (!isUnrouted && !isOpsTeam(rowTeam)) return;
-      if (teamFilter === 'unrouted' && !isUnrouted) return;
-      if (teamFilter !== 'all' && teamFilter !== 'unrouted' && !teamInGroup(rowTeam, teamFilter)) return;
-      const wk = String(week);
-      if (!cbByWeek[wk]) cbByWeek[wk] = { total:0, calledBack:0, notActioned:0, pendingSum:0, pendingCount:0, days:[] };
-      const req  = Number(r['Callback req']) || 0;
-      const cb   = Number(r['Called back'])  || 0;
-      const na   = Number(r['Not actioned']) || 0;
-      const pend = Number(r['Avg pending (mins)']) || 0;
-      cbByWeek[wk].total       += req;
-      cbByWeek[wk].calledBack  += cb;
-      cbByWeek[wk].notActioned += na;
-      if (pend > 0) { cbByWeek[wk].pendingSum += pend; cbByWeek[wk].pendingCount++; }
-      const date = r['Date'];
-      if (date) cbByWeek[wk].days.push({ date, req, cb, na, pend, rate: Number(r['Rate %'])||0, team: rowTeam });
-    });
-
-    let cbHtml = '';
-    if (Object.keys(cbByWeek).length > 0) {
-      Object.entries(cbByWeek).sort((a,b) => Number(a[0])-Number(b[0])).forEach(([week, d]) => {
-        const pct = d.total > 0 ? (d.calledBack / d.total * 100) : 0;
-        const avgPending = d.pendingCount > 0 ? (d.pendingSum / d.pendingCount) : 0;
-        const pctCol = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
-        const wkId = 'cbw-' + week;
-                const tc = CB_TAB_COLORS[teamFilter] || '#888';
-        const teamCell = teamFilter === 'all'
-          ? `<td class="l" style="color:var(--muted);font-size:10px">All</td>`
-          : `<td class="l"><span class="team-pill" style="background:${tc}18;color:${tc}">${CB_TAB_LABELS[teamFilter]||teamFilter}</span></td>`;
-        cbHtml += `<tr class="cb-week-row" data-wk="${wkId}" onclick="toggleCbWeek('${wkId}',this)">
-          <td class="l"><strong>Week ${week}</strong></td>
-          ${teamCell}
-          <td class="l">${d.total || '—'}</td>
-          <td class="l" style="color:var(--green);font-weight:500">${d.calledBack || '—'}</td>
-          <td class="l" style="color:var(--red);font-weight:500">${d.notActioned > 0 ? d.notActioned : '—'}</td>
-          <td class="l" style="color:${pctCol};font-weight:600">${pct ? pct.toFixed(1)+'%' : '—'}</td>
-          <td class="l">${avgPending ? avgPending.toFixed(1)+' mins' : '—'}</td>
-        </tr>`;
-        const sortedDays = [...d.days].sort((a,b) => {
-          const pa = parseDateParts(a.date), pb = parseDateParts(b.date);
-          return (pa ? pa.getTime() : 0) - (pb ? pb.getTime() : 0);
-        });
-        sortedDays.forEach(dy => {
-          const dPctCol = dy.rate >= 70 ? 'var(--green)' : dy.rate >= 50 ? 'var(--amber)' : dy.rate > 0 ? 'var(--red)' : 'var(--subtle)';
-          const dateObj = parseDateParts(dy.date);
-          const dayName = dateObj ? DAYS_OF_WEEK[(dateObj.getDay() + 6) % 7] : '?';
-          const dateLabel = dateObj ? `${dayName} ${dateObj.getDate()}/${dateObj.getMonth()+1}` : dy.date;
-          const dtc = TEAM_COLORS_CB[dy.team] || '#888';
-          const dayTeamCell = teamFilter === 'all'
-            ? `<td class="l"><span class="team-pill" style="background:${dtc}18;color:${dtc};font-size:9px">${dy.team||'—'}</span></td>`
-            : `<td class="l" style="color:var(--muted);font-size:10px">${dy.team||'—'}</td>`;
-          cbHtml += `<tr class="cb-day-row" data-parent="${wkId}" style="display:none">
-            <td class="l" style="padding-left:24px;color:var(--text)">${dateLabel}</td>
-            ${dayTeamCell}
-            <td class="l">${dy.req || '—'}</td>
-            <td class="l" style="color:var(--green)">${dy.cb || '—'}</td>
-            <td class="l" style="color:var(--red)">${dy.na > 0 ? dy.na : '—'}</td>
-            <td class="l" style="color:${dPctCol};font-weight:600">${dy.rate ? dy.rate.toFixed(1)+'%' : '—'}</td>
-            <td class="l">${dy.pend ? dy.pend.toFixed(1)+' mins' : '—'}</td>
-          </tr>`;
-        });
-      });
-    }
-    if (!cbHtml) cbHtml = '<tr><td colspan="7" style="text-align:center;color:var(--subtle);padding:1rem">No callback data</td></tr>';
-    document.getElementById('cbBody').innerHTML = cbHtml;
-  }
-
-        renderCallbackReport();
-}
-
-// ============================================================
-// TOGGLE CALLBACK WEEK ROWS
-// ============================================================
-function toggleCbWeek(wkId, row) {
-  const isOpen = row.classList.toggle('open');
-  const dayRows = document.querySelectorAll(`tr.cb-day-row[data-parent="${wkId}"]`);
-  dayRows.forEach(r => r.style.display = isOpen ? 'table-row' : 'none');
+  renderCallbackReport();
 }
 
 // ============================================================
@@ -1519,7 +1426,6 @@ function renderHeatmap(teamKey) {
         const val = data[dayIdx]?.[h] || 0;
         const intensity = val > 0 ? 0.15 + (val / maxVal) * 0.85 : 0;
         const bg = val > 0 ? colorFn(intensity) : 'var(--border)';
-        const textCol = intensity > 0.5 ? '#fff' : 'var(--text)';
         html += `<div class="heat-cell" style="background:${bg}"><div class="heat-cell-single" style="color:${intensity>0.4?'#fff':'var(--muted)'}">${val || ''}</div></div>`;
       });
     });
@@ -1602,7 +1508,7 @@ function renderAgents(teamFilter) {
   document.querySelectorAll('#agentTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.team === teamFilter));
 
   let agents = globalData.agents || [];
-    agents = agents.filter(a => teamInGroup(a.team, teamFilter));
+  agents = agents.filter(a => teamInGroup(a.team, teamFilter));
   if (_agentSearchVal) {
     const q = _agentSearchVal.toLowerCase();
     agents = agents.filter(a => a.name.toLowerCase().includes(q));
@@ -1620,7 +1526,7 @@ function renderAgents(teamFilter) {
   const aiTooltipText = document.getElementById('aiTooltipText');
 
   const tbody = document.getElementById('agentBody');
-  tbody.innerHTML = agents.map(a => {
+  tbody.innerHTML = agents.length ? agents.map(a => {
     const tc = TEAM_COLORS[a.team] || '#374151';
     const ts = TEAM_SHORT[a.team] || a.team;
     const ss = scoreStyle(a.callUtil);
@@ -1652,7 +1558,7 @@ function renderAgents(teamFilter) {
       <td><span class="score-pill" style="background:${ss.bg};color:${ss.col}">${a.callUtil}%</span></td>
       <td><span class="score-pill" style="background:${scoreStyle(a.zdUtil).bg};color:${scoreStyle(a.zdUtil).col}">${a.zdUtil}%</span></td>
     </tr>`;
-  }).join('');
+  }).join('') : '<tr><td colspan="21" class="l" style="text-align:center;color:var(--subtle);padding:1rem">No agent data for this week</td></tr>';
 
   // AI tooltip on hover
   tbody.querySelectorAll('tr.has-summary').forEach(row => {
@@ -1708,11 +1614,13 @@ function exportAgentsCSV() {
   URL.revokeObjectURL(url);
 }
 
+// Custom date range is not supported yet — falls back to the latest week (see backlog)
 function applyCustomWeek() {
   const from = document.getElementById('customFrom').value;
   const to   = document.getElementById('customTo').value;
   if (!from || !to) return;
   currentWeek = 'custom';
+  globalData.agents = globalData.buildAgents(currentWeek);
   renderAgents(currentAgentTeam);
 }
 
@@ -1730,9 +1638,6 @@ function renderTrendChart() {
     { label:'Risk',      keys:new Set(['Risk and compliance']),          color:'#b45309' },
     { label:'Credit',    keys:new Set(['Credit Control']),               color:'#7c3aed' },
   ];
-  const agentTeamMap2 = {};
-  teamRows.forEach(r=>{ const n=String(r['agent_name']||'').trim(); const t=String(r['team']||'').trim(); if(n&&t) agentTeamMap2[n]=t; });
-  const supportIn = globalData.rawCallsRows;
   if (charts.trend) charts.trend.destroy();
   charts.trend = new Chart(document.getElementById('trendChart'), {
     type:'line',
@@ -2002,7 +1907,7 @@ function cbRenderDetail() {
   const btn = document.getElementById('cbMoreBtn');
   if (btn) btn.onclick = () => { CB_STATE.showAll = !CB_STATE.showAll; cbRenderDetail(); };
 }
-  
+
 // ============================================================
 // BOOT
 // ============================================================
