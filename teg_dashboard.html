@@ -312,7 +312,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div id="teamGrid" class="team-grid"></div>
 
-    <div class="section-wrap"><div class="section-label">Answer rate trend — last 8 weeks</div><button class="info-btn" data-tip="Inbound answer rate per team, week by week — same figures as the Team overview cards. Hover a week to see answered vs received." data-update="Live from raw calls">i</button></div>
+    <div class="section-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:6px"><div class="section-label" id="trendLabel">Answer rate trend</div><button class="info-btn" data-tip="Inbound answer rate per team for completed weeks (the current week is left out until it finishes). Answered ÷ all inbound calls, in UK time. Hover a week to see answered vs received." data-update="From agg_calls_hourly (weekly summary of raw calls)">i</button></div><div class="tabs" id="trendPeriodTabs" style="margin-bottom:0"><button class="tab" data-n="8">8 wks</button><button class="tab active" data-n="12">12 wks</button><button class="tab" data-n="26">26 wks</button><button class="tab" data-n="52">52 wks</button></div></div>
     <div class="trend-card"><div class="trend-wrap"><canvas id="trendChart"></canvas></div></div>
 
     <div class="two-col">
@@ -827,7 +827,7 @@ async function loadDashboard() {
            supportIn, supportOut, reveredIn, reveredOut,
            onboardIn, onboardOut, riskIn, riskOut,
            creditIn, creditOut, keyIn, keyOut, smartIn, smartOut,
-           rawCallsRows] = await Promise.all([
+           rawCallsRows, aggHourlyRows] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
       readSheet('call volumes'),
@@ -850,6 +850,7 @@ async function loadDashboard() {
       readSheet('Smartbook inbound'),
       readSheet('Smartbook outbound'),
       readSheetRawLarge('raw_calls'),
+      readSheetLarge('agg_calls_hourly'),
     ]);
 
     const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -1116,7 +1117,7 @@ async function loadDashboard() {
     globalData = { totals,dayOrder,dayData,companyRows,teamSummary,agents,cbRows,weekNum:agentStatsRows[0]?.['Week']||'—',
       agentStatsRows,cvRows,zdRows,teamRows,agentTeamMap,aiMap:_aiMap,teamDefs,
       buildTeamSummary,buildOutboundSummary,outboundSummary,buildAgents,
-      supportOut,reveredOut,onboardOut,riskOut,creditOut,rawCallsRows,
+      supportOut,reveredOut,onboardOut,riskOut,creditOut,rawCallsRows,aggHourlyRows,
       availableWeeks:[...new Set(agentStatsRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b)) };
 
     const cfgNumbersRows = await readSheetRaw('cfg_numbers ');
@@ -1636,7 +1637,106 @@ function applyCustomWeek() {
 // ============================================================
 // TREND CHART
 // ============================================================
+// Team key for an inbound team label in agg_calls_hourly (same team sets as the Team overview cards)
+const TREND_TEAM_OF = {
+  'Support':'support',
+  'Support Revered':'revered', 'Support + Revered':'revered',
+  'Onboarding':'onboarding', 'Onboarding stage 1 calls':'onboarding',
+  'Risk and compliance':'risk',
+  'Credit Control':'credit', 'Support - Credit Control':'credit',
+  '2nd line (Tech support team)':'secondline',
+};
+let trendWeeksShown = 12;
+
+// ISO year-week key for "now" in UK time, e.g. "2026-W42" (used to leave out the week in progress)
+function currentWeekKeyUK() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/London' }));
+  const wd = now.getDay() || 7;
+  const t = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 4 - wd));
+  const y = t.getUTCFullYear();
+  const w = Math.ceil(((t - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
+  return y + '-W' + String(w).padStart(2, '0');
+}
+
+// Weekly inbound totals per team from agg_calls_hourly: { '2026-W39': { support:{a,n}, ... } }
+function buildTrendFromAgg() {
+  const rows = globalData.aggHourlyRows || [];
+  const byWeek = {};
+  rows.forEach(r => {
+    if (String(r['direction'] || '').trim() !== 'inbound') return;
+    const key = TREND_TEAM_OF[String(r['team'] || '').trim()]; if (!key) return;
+    const wk = String(r['week_key'] || '').trim(); if (!wk) return;
+    if (!byWeek[wk]) byWeek[wk] = {};
+    if (!byWeek[wk][key]) byWeek[wk][key] = { a: 0, n: 0 };
+    byWeek[wk][key].a += Number(r['answered']) || 0;
+    byWeek[wk][key].n += Number(r['calls']) || 0;
+  });
+  return byWeek;
+}
+
 function renderTrendChart() {
+  if (!(globalData.aggHourlyRows || []).length) {
+    // Summary sheet missing or failed to load: fall back to the previous calculation
+    console.warn('agg_calls_hourly not loaded, using legacy trend');
+    const lbl = document.getElementById('trendLabel'); if (lbl) lbl.textContent = 'Answer rate trend — last 8 weeks';
+    const tabs = document.getElementById('trendPeriodTabs'); if (tabs) tabs.style.display = 'none';
+    return renderTrendChartLegacy();
+  }
+  const byWeek = buildTrendFromAgg();
+  const curKey = currentWeekKeyUK();
+  const allWeeks = Object.keys(byWeek).filter(k => k < curKey).sort();
+  const weeks = allWeeks.slice(-trendWeeksShown);
+  const multiYear = new Set(weeks.map(k => k.slice(0, 4))).size > 1;
+  const labelOf = k => 'Wk ' + Number(k.slice(6)) + (multiYear ? " '" + k.slice(2, 4) : '');
+  const TEAMS = [
+    { key:'support',    label:'Support',     color:'#1d4ed8' },
+    { key:'revered',    label:'Revered',     color:'#0e7490' },
+    { key:'onboarding', label:'Onboarding',  color:'#15803d' },
+    { key:'risk',       label:'Risk',        color:'#b45309' },
+    { key:'credit',     label:'Credit ctrl', color:'#7c3aed' },
+    { key:'secondline', label:'2nd line',    color:'#c2410c' },
+  ];
+  const detail = {};
+  const datasets = TEAMS.map(tm => {
+    detail[tm.key] = weeks.map(k => (byWeek[k] && byWeek[k][tm.key]) || { a: 0, n: 0 });
+    return {
+      label: tm.label, _key: tm.key, borderColor: tm.color, backgroundColor: tm.color,
+      data: detail[tm.key].map(d => d.n > 0 ? Math.round(d.a / d.n * 1000) / 10 : null),
+      tension: 0.3, fill: false, pointRadius: weeks.length > 26 ? 1.5 : 3, spanGaps: true,
+    };
+  });
+  const lbl = document.getElementById('trendLabel');
+  if (lbl) lbl.textContent = 'Answer rate trend — ' + (weeks.length < trendWeeksShown ? weeks.length + ' weeks available' : 'last ' + weeks.length + ' weeks');
+  if (charts.trend) charts.trend.destroy();
+  charts.trend = new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: { labels: weeks.map(labelOf), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 10, font: { size: 11 } } },
+        tooltip: { callbacks: {
+          title: items => items.length ? weeks[items[0].dataIndex] : '',
+          label: ctx => {
+            const d = detail[ctx.dataset._key][ctx.dataIndex];
+            return `${ctx.dataset.label}: ${ctx.parsed.y}% (${d.a} of ${d.n} answered)`;
+          } } }
+      },
+      scales: { x: { grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 14 } },
+                y: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } } }
+    }
+  });
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('#trendPeriodTabs .tab'); if (!btn) return;
+  document.querySelectorAll('#trendPeriodTabs .tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  trendWeeksShown = Number(btn.dataset.n) || 12;
+  renderTrendChart();
+});
+
+function renderTrendChartLegacy() {
   // Uses the SAME calculation as the Team overview cards (buildTeamSummary):
   // team inbound sheet if it has a row for that week, otherwise raw_calls by team_name / team number.
   if (!globalData.buildTeamSummary) return;
