@@ -659,7 +659,7 @@ async function readSheetRawLarge(sheetName) {
       const d = await resp.json();
       if (d.values) allRows.push(...d.values);
     }
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: allRows })); } catch(e) {}
+    // Not cached in browser storage: raw_calls holds caller phone numbers (GDPR)
     return allRows;
   } catch(e) { console.error('readSheetRawLarge error', sheetName, e); return []; }
 }
@@ -828,6 +828,8 @@ let charts = {};
 async function loadDashboard() {
   document.getElementById('loadingScreen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
+  // raw_calls (with caller phone numbers) is no longer kept in the browser: remove any old cached copy
+  try { localStorage.removeItem('teg_rawcalls_v6'); } catch(e) {}
 
   try {
     const [companyRows, agentStatsRows, cvRows,
@@ -835,7 +837,7 @@ async function loadDashboard() {
            supportIn, supportOut, reveredIn, reveredOut,
            onboardIn, onboardOut, riskIn, riskOut,
            creditIn, creditOut, keyIn, keyOut, smartIn, smartOut,
-           rawCallsRows, aggHourlyRows, aggAgentRows] = await Promise.all([
+           rawCallsSkipped, aggHourlyRows, aggAgentRows] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
       readSheet('call volumes'),
@@ -857,10 +859,17 @@ async function loadDashboard() {
       readSheet('Key accounts outbound'),
       readSheet('Smartbook inbound'),
       readSheet('Smartbook outbound'),
-      readSheetRawLarge('raw_calls'),
+      Promise.resolve([]), // raw_calls only loaded as a fallback (below)
       readSheetLarge('agg_calls_hourly'),
       readSheetLarge('agg_agent_week'),
     ]);
+
+    // Every section reads the summary sheets. Only if they fail to load do we fall back to raw_calls.
+    let rawCallsRows = [];
+    if (!(aggHourlyRows || []).length) {
+      console.warn('agg_calls_hourly not loaded: falling back to raw_calls (last 50,000 rows)');
+      rawCallsRows = await readSheetRawLarge('raw_calls');
+    }
 
     const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
     const dayData = { inbound:{}, outbound:{}, missed:{}, total:{} };
