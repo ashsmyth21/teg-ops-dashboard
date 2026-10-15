@@ -1,2040 +1,233 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TEG Ops Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+// BuildCallAggregates — backfill of the weekly/hourly summaries (rolling-year plan)
+// v2 (step 3a): inbound calls with no Aircall team_name are attributed by number_id via cfg_numbers,
+//               so missed calls on team lines (e.g. Revered, Credit) are counted against that team.
+// Reads ALL of raw_calls in chunks and (re)builds two small summary sheets:
+//   agg_calls_hourly : one row per UK-local date x hour x direction x team
+//   agg_agent_week   : one row per ISO week x agent
+// Safe to re-run: both sheets are cleared and fully rewritten each time.
+// Run from Excel Online (Automate tab), NOT from Power Automate (120s limit).
 
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#f4f5f7;--surface:#ffffff;--border:#e2e4e9;
-  --text:#111318;--muted:#6b7280;--subtle:#9ca3af;
-  --blue:#1d4ed8;--blue-light:#eff6ff;--blue-mid:#3b82f6;
-  --green:#15803d;--green-light:#f0fdf4;
-  --red:#dc2626;--red-light:#fef2f2;
-  --amber:#b45309;--amber-light:#fffbeb;
-  --support:#1d4ed8;--onboarding:#15803d;--risk:#b45309;
-  --credit:#7c3aed;--keyaccts:#be185d;--smartbook:#374151;--secondline:#c2410c;
-}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
-.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
-.topbar-left{display:flex;align-items:center;gap:12px}
-.topbar h1{font-size:15px;font-weight:600;letter-spacing:-.01em}
-.topbar .week-badge{background:var(--blue-light);color:var(--blue);font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px}
-.topbar-right{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
-.refresh-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
-.refresh-btn:hover{background:var(--bg)}
-.dash{padding:20px 24px;max-width:1700px;margin:0 auto}
-.section-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px}
-.metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:4px}
-.metric-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
-.metric-card .lbl{font-size:11px;color:var(--muted);margin-bottom:2px}
-.metric-card .val{font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
-.metric-card .sub{font-size:11px;color:var(--subtle);margin-top:3px}
-.team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:4px}
-.team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
-.team-card .tc-name{font-size:11px;font-weight:600;margin-bottom:8px}
-.team-card .tc-row{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px}
-.team-card .tc-val{font-weight:500;color:var(--text)}
-.tc-bar{height:3px;border-radius:2px;background:var(--border);margin:5px 0 4px}
-.tc-fill{height:3px;border-radius:2px}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px}
-.chart-wrap{position:relative;height:200px}
-.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
-.tab{padding:4px 10px;font-size:11px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--muted);font-weight:500}
-.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.heat-grid{display:grid;gap:2px}
-.heat-cell{height:28px;border-radius:3px;display:flex;align-items:stretch;overflow:hidden;font-size:10px}
-.heat-cell-left{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px;border-right:1px solid rgba(255,255,255,0.2)}
-.heat-cell-right{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px;opacity:0.75}
-.heat-cell-single{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px}
-.heat-head{height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);font-weight:500}
-table{width:100%;border-collapse:collapse}
-th{font-size:10px;font-weight:500;color:var(--muted);text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface)}
-th.l{text-align:left}
-td{border-bottom:1px solid var(--border);padding:5px 6px;font-size:11px;white-space:nowrap;text-align:right}
-td.l{text-align:left}
-.team-pill{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:500}
-.score-pill{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:600}
-.bar-mini{height:5px;border-radius:3px;background:var(--blue-mid);display:inline-block;vertical-align:middle;margin-right:3px}
-.excess-pill{display:inline-block;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:600;background:var(--red-light);color:var(--red);margin-left:2px}
-.wp{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:600;background:var(--amber-light);color:var(--amber);margin-left:3px}
-.flag{display:inline-block;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:500;margin-left:2px}
-.muted{color:var(--subtle)}
-
-/* Section tooltips */
-.section-wrap{display:flex;align-items:center;gap:6px;margin:20px 0 10px}
-.section-wrap .section-label{margin:0}
-.info-btn{width:15px;height:15px;border-radius:50%;background:var(--border);color:var(--muted);
-  font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;
-  cursor:pointer;border:none;flex-shrink:0;line-height:1}
-.info-btn:hover{background:var(--blue);color:#fff}
-.section-tooltip{
-  position:fixed;z-index:9998;
-  background:#1e2433;color:#e8eaf0;
-  border-radius:8px;padding:10px 13px;
-  max-width:280px;font-size:11px;line-height:1.5;
-  box-shadow:0 4px 20px rgba(0,0,0,.25);
-  pointer-events:none;opacity:0;transition:opacity .15s;
-}
-.section-tooltip.visible{opacity:1}
-.section-tooltip-title{font-size:9px;font-weight:700;color:#6b7a99;
-  text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
-.section-tooltip-update{font-size:10px;color:#6b7a99;margin-top:5px;
-  border-top:1px solid #2d3548;padding-top:5px}
-.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:var(--muted)}
-.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--blue-mid);border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.error-box{background:var(--red-light);border:1px solid #fecaca;border-radius:8px;padding:16px;color:var(--red);margin:20px}
-
-/* AI Summary tooltip */
-.ai-tooltip{
-  position:fixed;z-index:9999;
-  background:linear-gradient(135deg,#1a1f2e 0%,#1e2540 100%);
-  color:#e8edf8;
-  border-radius:12px;padding:14px 16px;
-  max-width:340px;font-size:12.5px;line-height:1.6;
-  box-shadow:0 12px 40px rgba(0,0,0,.38),0 0 0 1px rgba(99,130,255,.18);
-  pointer-events:none;opacity:0;
-  transition:opacity .18s ease;
-}
-.ai-tooltip.visible{opacity:1}
-.ai-tooltip-label{
-  display:flex;align-items:center;gap:5px;
-  font-size:9.5px;font-weight:700;
-  color:#8b9fd4;text-transform:uppercase;letter-spacing:.1em;
-  margin-bottom:8px;padding-bottom:7px;
-  border-bottom:1px solid rgba(99,130,255,.2);
-}
-.ai-tooltip-label::before{
-  content:'✦';font-size:8px;color:#7c6af7;
-}
-tr.has-summary{cursor:pointer}
-tr.has-summary:hover td{background:#f5f7ff}
-
-/* Sticky Agent + Team columns */
-thead th{position:sticky;top:0;z-index:3;background:var(--surface)}
-th.col-agent,
-td.col-agent {
-  position: sticky;
-  left: 0;
-  min-width: 170px;
-  max-width: 170px;
-  background: var(--surface);
-  z-index: 2;
-}
-th.col-team,
-td.col-team {
-  position: sticky;
-  left: 170px;
-  min-width: 110px;
-  max-width: 110px;
-  background: var(--surface);
-  z-index: 2;
-  border-right: 2px solid var(--border);
-}
-thead th.col-agent,
-thead th.col-team {
-  z-index: 3;
+interface HourAgg {
+  weekKey: string; isoYear: number; isoWeek: number; date: string; weekday: number; hour: number;
+  direction: string; team: string;
+  calls: number; answered: number; missed: number; missedOoh: number; missedAbandoned: number;
+  connected10s: number; talkSecs: number;
 }
 
-.hide-team th.col-team,
-.hide-team td.col-team {
-  display: none;
-}
-.hide-team th.col-agent,
-.hide-team td.col-agent {
-  left: 0;
+interface AgentAgg {
+  weekKey: string; isoYear: number; isoWeek: number; user: string; team: string;
+  inboundAnswered: number; outboundTotal: number; outboundConnected10s: number;
+  talkInSecs: number; talkOutSecs: number;
 }
 
-/* AI Brief panel */
-.ai-brief{background:#1e2433;border-radius:10px;padding:16px 20px;margin-bottom:12px;border:1px solid #2d3548}
-.ai-brief-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.ai-brief-label{font-size:9px;font-weight:700;color:#6b7a99;text-transform:uppercase;letter-spacing:.1em;display:flex;align-items:center;gap:6px}
-.ai-brief-label svg{opacity:.7}
-.ai-brief-text{font-size:13px;color:#d1d5db;line-height:1.6}
-.ai-brief-loading{color:#6b7a99;font-size:12px;display:flex;align-items:center;gap:6px}
-.ai-generate-btn{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;transition:opacity .15s}
-.ai-generate-btn:hover{opacity:.85}
-.ai-generate-btn:disabled{opacity:.5;cursor:not-allowed}
-
-/* Delta badges */
-.delta{font-size:10px;font-weight:600;padding:1px 4px;border-radius:3px;margin-left:4px}
-.delta.up{background:#f0fdf4;color:#15803d}
-.delta.down{background:#fef2f2;color:#dc2626}
-.delta.flat{background:#f3f4f6;color:#6b7280}
-
-/* Trend chart */
-.trend-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px}
-.trend-wrap{position:relative;height:180px}
-
-/* Settings modal */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:none;align-items:center;justify-content:center}
-.modal-overlay.open{display:flex}
-.modal{background:var(--surface);border-radius:12px;padding:24px;width:420px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.2)}
-.modal h2{font-size:14px;font-weight:600;margin-bottom:4px}
-.modal p{font-size:11px;color:var(--muted);margin-bottom:16px}
-.modal label{font-size:11px;font-weight:500;display:block;margin-bottom:4px}
-.modal input[type=text]{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;font-family:monospace;margin-bottom:14px}
-.modal input[type=text]:focus{outline:none;border-color:var(--blue-mid)}
-.modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
-.btn-secondary{background:none;border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer}
-.btn-primary{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer}
-.settings-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--muted);font-size:14px;line-height:1}
-.settings-btn:hover{background:var(--bg)}
-
-/* Agent search + export bar */
-.agent-controls{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
-.agent-search{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;min-width:180px;color:var(--text);background:var(--surface)}
-.agent-search:focus{outline:none;border-color:var(--blue-mid)}
-.export-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--muted)}
-.export-btn:hover{background:var(--bg)}
-
-/* Sortable column headers */
-th.sortable{cursor:pointer;user-select:none}
-th.sortable:hover{color:var(--blue)}
-th.sortable::after{content:' ↕';font-size:8px;opacity:.4}
-th.sort-asc::after{content:' ↑';opacity:1;color:var(--blue)}
-th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
-
-/* AI coaching section */
-.coaching-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-bottom:12px}
-.coaching-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
-.coaching-agent{font-size:11px;font-weight:600;margin-bottom:2px}
-.coaching-team{font-size:10px;margin-bottom:8px}
-.coaching-text{font-size:11px;color:var(--muted);line-height:1.55}
-
-/* Spinner small */
-.spin-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
-
-/* API key indicator */
-.key-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px}
-.key-dot.set{background:#15803d}
-.key-dot.unset{background:#dc2626}
-
-/* Callback expand rows */
-.cb-week-row{cursor:pointer;user-select:none}
-.cb-week-row:hover td{background:var(--blue-light)}
-.cb-week-row td:first-child::before{content:'▶ ';font-size:9px;color:var(--muted);margin-right:4px;transition:transform .15s;display:inline-block}
-.cb-week-row.open td:first-child::before{content:'▼ ';color:var(--blue)}
-.cb-day-row td{background:#fafbff;font-size:10px;color:var(--muted);padding:3px 6px}
-.cb-day-row td:first-child{padding-left:24px;color:var(--text)}
-.cb-day-row:last-child td{border-bottom:2px solid var(--border)}
-
-/* Callback report (v2) */
-.cb-controls{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.cb-note{margin-top:10px;background:var(--amber-light);color:var(--amber);border:1px solid #fde68a;border-radius:6px;padding:6px 10px;font-size:11px}
-.cb-sub{font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px}
-.cb-sub span{font-weight:400;color:var(--subtle);margin-left:4px}
-.cb-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:24px}
-.cb-team-row{display:grid;grid-template-columns:170px 1fr 50px 50px;gap:8px;align-items:center;font-size:11px;padding:6px 0;border-bottom:1px solid var(--border)}
-.cb-team-row.head{color:var(--muted);font-size:10px}
-.cb-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
-.cb-bar>span{display:block;height:6px;border-radius:3px}
-@media(max-width:1000px){.cb-split{grid-template-columns:1fr}}
-</style>
-</head>
-<body>
-
-<div id="loadingScreen" class="loading">
-  <div class="spinner"></div>
-  <div>Loading dashboard data…</div>
-</div>
-
-<div id="app" style="display:none">
-  <div class="topbar">
-    <div class="topbar-left">
-      <h1>TEG Ops Dashboard</h1>
-      <span class="week-badge" id="weekBadge">Week —</span>
-    </div>
-    <div class="topbar-right">
-      <span id="lastUpdated">—</span>
-      <button class="refresh-btn" onclick="window._rawCallsForceRefresh=true;loadDashboard()">↻ Refresh</button>
-      <button class="settings-btn" onclick="openSettings()" title="Settings">⚙</button>
-    </div>
-  </div>
-
-  <div class="dash">
-    <!-- AI Weekly Brief -->
-    <div id="aiBriefPanel" class="ai-brief" style="display:none">
-      <div class="ai-brief-header">
-        <div class="ai-brief-label">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" stroke-width="2"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-          AI Weekly Brief
-        </div>
-        <button id="aiBriefBtn" class="ai-generate-btn" onclick="generateAIBrief()">✦ Generate</button>
-      </div>
-      <div id="aiBriefText" class="ai-brief-text" style="color:#6b7a99;font-size:12px">Click Generate to create an AI-powered performance summary for this week. Set your Anthropic API key in ⚙ Settings.</div>
-    </div>
-
-    <div id="overviewWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
-      <div class="tabs" id="overviewWeekTabs" style="margin-bottom:0">
-        <button class="tab active" data-week="latest">Latest</button>
-      </div>
-    </div>
-    <div class="section-wrap" style="margin-top:0"><div class="section-label">Operations overview</div><button class="info-btn" data-tip="Total, missed, inbound and outbound call counts for ops teams (Support, Revered, Onboarding, Risk, Credit control, 2nd line)." data-update="Live from raw calls">i</button></div>
-    <div class="metrics-row">
-      <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub">Mon–Sun</div></div>
-      <div class="metric-card"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div>
-      <div class="metric-card"><div class="lbl">Inbound</div><div class="val" id="mInbound">—</div><div class="sub" id="mInboundPct">—</div></div>
-      <div class="metric-card"><div class="lbl">Outbound</div><div class="val" id="mOutbound">—</div><div class="sub" id="mOutboundPct">—</div></div>
-    </div>
-
-    <div id="dayWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
-      <div class="tabs" id="dayWeekTabs" style="margin-bottom:0">
-        <button class="tab active" data-week="latest">Latest</button>
-      </div>
-    </div>
-    <div class="section-wrap" style="margin-top:0"><div class="section-label">Call volume by day</div><button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day of the week." data-update="Updated every Monday at 6am">i</button></div>
-    <div class="tabs" id="dayTeamTabs">
-      <button class="tab active" data-team="all">All teams</button>
-      <button class="tab" data-team="support">Support</button>
-      <button class="tab" data-team="revered">Revered</button>
-      <button class="tab" data-team="onboarding">Onboarding</button>
-      <button class="tab" data-team="risk">Risk</button>
-      <button class="tab" data-team="credit">Credit control</button>
-      <button class="tab" data-team="secondline">2nd line</button>
-    </div>
-    <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
-
-    <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="Updated every Monday at 6am">i</button></div>
-    <div id="teamWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
-      <div class="tabs" id="teamWeekTabs" style="margin-bottom:0">
-        <button class="tab active" data-week="latest">Latest</button>
-      </div>
-    </div>
-    <div id="teamGrid" class="team-grid"></div>
-
-    <div class="section-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:6px"><div class="section-label" id="trendLabel">Answer rate trend</div><button class="info-btn" data-tip="Inbound answer rate per team for completed weeks (the current week is left out until it finishes). Answered ÷ all inbound calls, in UK time. Hover a week to see answered vs received." data-update="From agg_calls_hourly (weekly summary of raw calls)">i</button></div><div class="tabs" id="trendPeriodTabs" style="margin-bottom:0"><button class="tab" data-n="8">8 wks</button><button class="tab active" data-n="12">12 wks</button><button class="tab" data-n="26">26 wks</button><button class="tab" data-n="52">52 wks</button></div></div>
-    <div class="trend-card"><div class="trend-wrap"><canvas id="trendChart"></canvas></div></div>
-
-    <div class="two-col">
-      <div>
-        <div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div>
-        <div id="answerWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-          <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
-          <div class="tabs" id="answerWeekTabs" style="margin-bottom:0">
-            <button class="tab active" data-week="latest">Latest</button>
-          </div>
-        </div>
-        <div class="card"><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
-      </div>
-      <div>
-        <div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team, based on agent team attribution." data-update="Updated every Monday at 6am">i</button></div>
-        <div id="outboundWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-          <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
-          <div class="tabs" id="outboundWeekTabs" style="margin-bottom:0">
-            <button class="tab active" data-week="latest">Latest</button>
-          </div>
-        </div>
-        <div class="card"><div class="chart-wrap"><canvas id="outboundChart"></canvas></div></div>
-      </div>
-    </div>
-
-    <div class="section-wrap"><div class="section-label">Inbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of inbound call volume by hour (8am–5pm) and day of week. Darker = busier." data-update="Updated every Monday at 6am">i</button></div>
-    <div id="heatWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
-      <div class="tabs" id="heatWeekTabs" style="margin-bottom:0">
-        <button class="tab active" data-week="latest">Latest</button>
-      </div>
-    </div>
-    <div class="tabs" id="heatTabs">
-      <button class="tab active" data-team="support">Support</button>
-      <button class="tab" data-team="revered">Revered</button>
-      <button class="tab" data-team="onboarding">Onboarding</button>
-      <button class="tab" data-team="risk">Risk</button>
-      <button class="tab" data-team="credit">Credit control</button>
-      <button class="tab" data-team="secondline">2nd line</button>
-    </div>
-    <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
-
-    <div class="section-wrap"><div class="section-label">Outbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of outbound call volume by hour (8am–5pm) and day of week per team." data-update="Live from raw calls">i</button></div>
-    <div id="outHeatWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
-      <div class="tabs" id="outHeatWeekTabs" style="margin-bottom:0">
-        <button class="tab active" data-week="latest">Latest</button>
-      </div>
-    </div>
-    <div class="tabs" id="outHeatTabs">
-      <button class="tab active" data-team="supportrev">Support + Revered</button>
-      <button class="tab" data-team="onboarding">Onboarding</button>
-      <button class="tab" data-team="risk">Risk</button>
-      <button class="tab" data-team="credit">Credit control</button>
-      <button class="tab" data-team="secondline">2nd line</button>
-    </div>
-    <div class="card" style="margin-bottom:12px"><div id="outHeatmap" class="heat-grid"></div></div>
-
-    <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score — all for the selected week. Mid-week, scores are measured against the working days so far. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
-    <div id="weekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-      <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
-      <div class="tabs" id="weekTabs" style="margin-bottom:0">
-        <button class="tab active" data-week="latest">Latest</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;margin-left:8px">
-        <input type="date" id="customFrom" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:5px;color:var(--text)">
-        <span style="font-size:11px;color:var(--muted)">to</span>
-        <input type="date" id="customTo" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:5px;color:var(--text)">
-        <button onclick="applyCustomWeek()" style="font-size:11px;padding:3px 10px;border:1px solid var(--blue);border-radius:5px;background:var(--blue);color:#fff;cursor:pointer">Apply</button>
-      </div>
-    </div>
-    <div class="agent-controls">
-      <input type="text" class="agent-search" id="agentSearch" placeholder="Search agent…" oninput="filterAgentTable(this.value)">
-      <button class="export-btn" onclick="exportAgentsCSV()">⬇ Export CSV</button>
-    </div>
-    <div class="tabs" id="agentTabs">
-      <button class="tab active" data-team="all">All ops teams</button>
-      <button class="tab" data-team="support">Support + Revered</button>
-      <button class="tab" data-team="onboarding">Onboarding</button>
-      <button class="tab" data-team="risk">Risk</button>
-      <button class="tab" data-team="credit">Credit control</button>
-      <button class="tab" data-team="secondline">2nd line</button>
-    </div>
-    <div class="card" style="padding:0;margin-bottom:12px;overflow:hidden">
-      <div style="overflow:auto;max-height:480px;border-radius:8px">
-      <table id="agentTable" style="min-width:1300px">
-        <thead>
-          <tr>
-            <th class="l col-agent" rowspan="2">Agent</th>
-            <th class="l col-team" rowspan="2">Team</th>
-            <th colspan="9" style="color:var(--blue)">Aircall availability</th>
-            <th colspan="4" style="color:var(--green)">Call volumes</th>
-            <th colspan="3" style="color:var(--keyaccts)">Zendesk</th>
-            <th colspan="2">Score</th>
-          </tr>
-          <tr>
-            <th style="color:var(--blue)" class="sortable" data-col="available" onclick="sortAgentTable('available')">Available</th>
-            <th style="color:var(--blue)" class="sortable" data-col="talk_inbound" onclick="sortAgentTable('talk_inbound')">In talk (in)</th>
-            <th style="color:var(--blue)" class="sortable" data-col="talk_outbound" onclick="sortAgentTable('talk_outbound')">In talk (out)</th>
-            <th style="color:var(--blue)" class="sortable" data-col="after_call_work" onclick="sortAgentTable('after_call_work')">ACW</th>
-            <th style="color:var(--blue)">Allowed ACW</th>
-            <th style="color:var(--red)" class="sortable" data-col="excess_acw" onclick="sortAgentTable('excess_acw')">Excess ACW</th>
-            <th style="color:var(--green)">Investigation</th>
-            <th style="color:var(--blue)">Back office</th>
-            <th style="color:var(--credit)">Training</th>
-            <th style="color:var(--amber)">Lunch</th>
-            <th style="color:var(--green)" class="sortable" data-col="inbound_calls" onclick="sortAgentTable('inbound_calls')">Ans. inbound</th>
-            <th style="color:var(--green)" class="sortable" data-col="outbound_calls" onclick="sortAgentTable('outbound_calls')">Conn. outbound</th>
-            <th style="color:var(--green)" class="sortable" data-col="total_outbound" onclick="sortAgentTable('total_outbound')">Outbound</th>
-            <th style="color:var(--green)" class="sortable" data-col="total_calls" onclick="sortAgentTable('total_calls')">Total calls</th>
-            <th style="color:var(--keyaccts)" class="sortable" data-col="zd_internal" onclick="sortAgentTable('zd_internal')">Internal</th>
-            <th style="color:var(--keyaccts)" class="sortable" data-col="zd_public" onclick="sortAgentTable('zd_public')">Public</th>
-            <th style="color:var(--keyaccts)" class="sortable" data-col="zd_solved" onclick="sortAgentTable('zd_solved')">Solved</th>
-            <th style="color:var(--blue-mid)" class="sortable sort-desc" data-col="callUtil" onclick="sortAgentTable('callUtil')">Call %</th>
-            <th style="color:var(--keyaccts)" class="sortable" data-col="zdUtil" onclick="sortAgentTable('zdUtil')">ZD %</th>
-          </tr>
-        </thead>
-        <tbody id="agentBody"></tbody>
-      </table>
-      </div>
-    </div>
-
-    <!-- CALLBACK REPORT (v2) -->
-    <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Unanswered inbound calls that reached a team, plus callback requests — ops teams only. A call counts as called back when we ring the caller back, or they get through on an answered call, within 8 working hours (Mon–Fri 08:30–17:30). Calls still inside their 8 hours aren't counted yet. Hang-ups before a team and out-of-hours calls are excluded." data-update="Daily at 5am">i</button></div>
-    <div class="card" style="margin-bottom:24px">
-      <div class="cb-controls">
-        <div class="tabs" id="cbPeriodTabs" style="margin-bottom:0">
-          <button class="tab" data-p="4">4 weeks</button>
-          <button class="tab active" data-p="8">8 weeks</button>
-          <button class="tab" data-p="12">12 weeks</button>
-          <button class="tab" data-p="all">All</button>
-        </div>
-        <div class="tabs" id="cbTeamTabs" style="margin-bottom:0">
-          <button class="tab active" data-cbteam="all">All ops teams</button>
-          <button class="tab" data-cbteam="support">Support</button>
-          <button class="tab" data-cbteam="onboarding">Onboarding</button>
-          <button class="tab" data-cbteam="risk">Risk</button>
-          <button class="tab" data-cbteam="credit">Credit control</button>
-          <button class="tab" data-cbteam="secondline">2nd line</button>
-        </div>
-      </div>
-      <div id="cbUnroutedNote" class="cb-note" style="display:none"></div>
-      <div class="metrics-row" style="margin:12px 0 18px">
-        <div class="metric-card"><div class="lbl">Callback requests</div><div class="val" id="cbmReq">—</div><div class="sub" id="cbdReq"></div></div>
-        <div class="metric-card"><div class="lbl">Called back</div><div class="val" id="cbmCb" style="color:var(--green)">—</div><div class="sub" id="cbdCb"></div></div>
-        <div class="metric-card"><div class="lbl">Not called back</div><div class="val" id="cbmNa" style="color:var(--red)">—</div><div class="sub" id="cbdNa"></div></div>
-        <div class="metric-card"><div class="lbl">% called back</div><div class="val" id="cbmPct">—</div><div class="sub" id="cbdPct"></div></div>
-      </div>
-      <div class="cb-sub">Weekly trend <span>* current week, still in progress</span></div>
-      <div class="chart-wrap" style="height:220px;margin-bottom:20px"><canvas id="cbChart"></canvas></div>
-      <div class="cb-split">
-        <div>
-          <div class="cb-sub">By team</div>
-          <div id="cbTeams"></div>
-        </div>
-        <div>
-          <div class="cb-sub">Week detail <span>newest first · click a week to see its days</span></div>
-          <table><thead><tr>
-            <th class="l">Week</th><th>Requests</th><th>Called back</th><th>Not called back</th><th>%</th>
-          </tr></thead><tbody id="cbBody"></tbody></table>
-          <div id="cbMore" style="margin-top:8px"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Settings Modal -->
-<div class="modal-overlay" id="settingsModal">
-  <div class="modal">
-    <h2>Settings</h2>
-    <p>Configure AI features for the TEG Ops Dashboard.</p>
-    <label><span class="key-dot" id="keyDot"></span>Anthropic API Key</label>
-    <input type="text" id="apiKeyInput" placeholder="sk-ant-…" autocomplete="off">
-    <p style="font-size:10px;color:var(--subtle);margin-top:-10px;margin-bottom:14px">Stored in your browser only. Used to generate AI Weekly Briefs and coaching summaries on demand.</p>
-    <div class="modal-footer">
-      <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
-      <button class="btn-primary" onclick="saveSettings()">Save</button>
-    </div>
-  </div>
-</div>
-
-<div class="ai-tooltip" id="aiTooltip">
-  <div class="ai-tooltip-label">AI coaching summary</div>
-  <div id="aiTooltipText"></div>
-</div>
-
-<script>
-// ============================================================
-// CONFIG
-// ============================================================
-const SITE_ID = 'TEGOperationsSharePoint';
-const FILE_ID = '016CEQCFOKZWTLCHGANRG3I67OBP7BWORY';
-const DRIVE_ID = 'b!eDxumJg2N0KTjySMKpu46bIUk2gwX7pOpP6Skm7rAYgPI0Pr1eS-RK80J7QDBAL4';
-const TENANT  = 'transportexchange';
-const CONTRACTED_SECS = 135000;
-const COMMENT_TIME    = 180;
-const LUNCH_EXPECTED  = 18000;
-const LUNCH_TOLERANCE = 300;
-const BRIDGE_STATUSES = ['out_for_lunch','on_a_break'];
-
-const TEAM_COLORS = {
-  'Support + Revered':'#1d4ed8','Support':'#1d4ed8','Revered':'#0e7490','Support Revered':'#0e7490',
-  'Onboarding':'#15803d','Onboarding stage 1 calls':'#166534','Risk and compliance':'#b45309',
-  'Key Accounts VIP Response Team':'#be185d','Credit Control':'#7c3aed','Support - Credit Control':'#7c3aed',
-  'Smartbook members':'#374151','2nd line (Tech support team)':'#c2410c',
-};
-const TEAM_SHORT = {
-  'Support + Revered':'Support+Rev','Support':'Support','Revered':'Revered','Support Revered':'Revered',
-  'Onboarding':'Onboarding','Onboarding stage 1 calls':'Onboarding S1','Risk and compliance':'Risk',
-  'Key Accounts VIP Response Team':'Key accts','Credit Control':'Credit ctrl','Support - Credit Control':'Credit ctrl',
-  'Smartbook members':'Smartbook','2nd line (Tech support team)':'2nd line',
+// Inbound attribution order: 1) Aircall team_name  2) cfg_numbers (number_id -> team)
+// 3) built-in list below (only used for numbers missing from cfg_numbers)  4) 'Other'
+const NUMBER_TEAM: { [id: string]: string } = {
+  '286844': 'Support', '286845': 'Support', '286847': 'Support', '286848': 'Support', '192211': 'Support',
+  '201178': 'Onboarding', '1216204': 'Risk and compliance', '326618': '2nd line (Tech support team)'
 };
 
-// ============================================================
-// MSAL AUTH
-// ============================================================
-const msalConfig = {
-  auth: {
-    clientId: '7059e381-7e87-49a8-9268-0a730ad100f7',
-    authority: 'https://login.microsoftonline.com/39c9cfa6-ac96-4804-a105-db8c03e1487d',
-    redirectUri: 'https://ashsmyth21.github.io/teg-ops-dashboard/teg_dashboard.html',
-  },
-  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
-};
+const READ_CHUNK = 20000;
+const WRITE_CHUNK = 5000;
 
-const msalInstance = new msal.PublicClientApplication(msalConfig);
-const SCOPES = ['https://graph.microsoft.com/Files.Read.All', 'https://graph.microsoft.com/Sites.Read.All'];
-let _token = null;
+function main(workbook: ExcelScript.Workbook) {
+  const raw = workbook.getWorksheet('raw_calls');
+  if (!raw) { console.log('ERROR: raw_calls sheet not found'); return; }
 
-async function initAuth() {
-  await msalInstance.initialize();
-  const redirectResult = await msalInstance.handleRedirectPromise();
-  if (redirectResult) {
-    _token = redirectResult.accessToken;
-    return true;
-  }
-  const accounts = msalInstance.getAllAccounts();
-  if (accounts.length === 0) {
-    await msalInstance.loginRedirect({ scopes: SCOPES });
-    return false;
-  }
-  try {
-    const result = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account: accounts[0] });
-    _token = result.accessToken;
-    return true;
-  } catch (e) {
-    await msalInstance.acquireTokenRedirect({ scopes: SCOPES, account: accounts[0] });
-    return false;
-  }
-}
+  // Lookups: agent -> team, number_id -> team
+  const agentTeam = readLookup(workbook, 'cfg_agents', 'agent_name', 'team', false);
+  const numberTeam = readLookup(workbook, 'cfg_numbers', 'number_id', 'team', true);
+  console.log('cfg_agents entries: ' + Object.keys(agentTeam).length + ' | cfg_numbers entries: ' + Object.keys(numberTeam).length);
+  const attrib: { [how: string]: number } = { team_name: 0, cfg_numbers: 0, built_in_list: 0, unattributed: 0 };
+  const inboundTeams: { [team: string]: { calls: number; answered: number; viaNumber: number } } = {};
 
-async function getToken() { return _token; }
+  const used = raw.getUsedRange();
+  const rowCount = used.getRowCount();
+  const colCount = used.getColumnCount();
+  const hdr = raw.getRangeByIndexes(0, 0, 1, colCount).getValues()[0].map(h => String(h).trim());
+  const col = (name: string): number => {
+    const i = hdr.indexOf(name);
+    if (i < 0) throw new Error('Column not found in raw_calls: ' + name);
+    return i;
+  };
+  const iId = col('id'), iDir = col('direction'), iReason = col('missed_call_reason'), iSt = col('started_at'),
+    iAns = col('answered_at'), iEnd = col('ended_at'), iDur = col('duration'), iNum = col('number_id'),
+    iUser = col('user_name'), iTeam = col('team_name');
 
-// ============================================================
-// GRAPH API HELPERS
-// ============================================================
-async function getFileEndpoint() {
-  return `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}`;
-}
+  const hourly: { [k: string]: HourAgg } = {};
+  const agents: { [k: string]: AgentAgg } = {};
+  const seen = new Set<string>();
+  const weekCounts: { [k: string]: number } = {};
+  let read = 0, dupes = 0, noTs = 0;
 
-async function readSheet(sheetName) {
-  try {
-    const token = await getToken();
-    if (!token) return [];
-    const base = await getFileEndpoint();
-    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange(valuesOnly=true)`;
-    const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
-    if (!resp.ok) { console.error('Sheet error', sheetName, resp.status, await resp.text()); return []; }
-    const data = await resp.json();
-    if (!data.values || data.values.length < 2) return [];
-    const headers = data.values[0];
-    return data.values.slice(1).map(row => {
-      const obj = {};
-      headers.forEach((h, i) => { obj[String(h)] = row[i]; });
-      return obj;
-    });
-  } catch(e) { console.error('readSheet error', sheetName, e); return []; }
-}
+  for (let start = 1; start < rowCount; start += READ_CHUNK) {
+    const n = Math.min(READ_CHUNK, rowCount - start);
+    const rows = raw.getRangeByIndexes(start, 0, n, colCount).getValues();
+    for (const r of rows) {
+      read++;
+      const id = String(r[iId] || '').trim();
+      if (id) { if (seen.has(id)) { dupes++; continue; } seen.add(id); }
+      const ts = Number(r[iSt]);
+      if (!ts) { noTs++; continue; }
 
-async function readSheetRaw(sheetName) {
-  try {
-    const token = await getToken();
-    if (!token) return [];
-    const base = await getFileEndpoint();
-    const url = `${base}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange(valuesOnly=true)`;
-    const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } });
-    if (!resp.ok) { console.error('Sheet error (raw)', sheetName, resp.status); return []; }
-    const data = await resp.json();
-    return data.values || [];
-  } catch(e) { console.error('readSheetRaw error', sheetName, e); return []; }
-}
-
-function _colNumToLetter(n) {
-  let s = '';
-  while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
-  return s;
-}
-
-async function readSheetRawLarge(sheetName) {
-  const CACHE_KEY = 'teg_rawcalls_v6';
-  const CACHE_TTL = 4 * 60 * 60 * 1000;
-  if (!window._rawCallsForceRefresh) {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { ts, data } = JSON.parse(cached);
-        if (Date.now() - ts < CACHE_TTL) { console.log('raw_calls: from cache (' + data.length + ' rows)'); return data; }
+      const loc = ukLocal(ts);
+      const dir = String(r[iDir] || '').trim();
+      const user = String(r[iUser] || '').trim();
+      const answered = r[iAns] !== '' && r[iAns] !== null;
+      const dur = Number(r[iDur] || 0);
+      const reason = String(r[iReason] || '').trim();
+      let talk = 0;
+      if (answered && r[iEnd] !== '' && r[iEnd] !== null) {
+        const s = Number(r[iEnd]) - Number(r[iAns]);
+        if (s > 0) talk = s;
       }
-    } catch(e) {}
-  }
-  window._rawCallsForceRefresh = false;
-  try {
-    const token = await getToken();
-    if (!token) return [];
-    const base = await getFileEndpoint();
-    const enc = encodeURIComponent(sheetName);
-    const h = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' };
-    const dimResp = await fetch(`${base}/workbook/worksheets('${enc}')/usedRange?$select=rowCount,columnCount`, { headers: h });
-    if (!dimResp.ok) { console.error('dim error', sheetName, dimResp.status); return []; }
-    const { rowCount, columnCount } = await dimResp.json();
-    if (!rowCount || !columnCount) return [];
-    const endCol = _colNumToLetter(columnCount);
-    const CHUNK = 5000;
-    const MAX_ROWS = 50000;
-    const allRows = [];
-    const startRow = rowCount > MAX_ROWS ? rowCount - MAX_ROWS + 1 : 2;
-    const hdrResp = await fetch(`${base}/workbook/worksheets('${enc}')/range(address='A1:${endCol}1')?$select=values`, { headers: h });
-    if (!hdrResp.ok) { console.error('header error', sheetName, hdrResp.status); return []; }
-    const hdrData = await hdrResp.json();
-    if (hdrData.values) allRows.push(...hdrData.values);
-    for (let r = startRow; r <= rowCount; r += CHUNK) {
-      const endRow = Math.min(r + CHUNK - 1, rowCount);
-      const resp = await fetch(`${base}/workbook/worksheets('${enc}')/range(address='A${r}:${endCol}${endRow}')?$select=values`, { headers: h });
-      if (!resp.ok) { console.error('chunk error', sheetName, r, resp.status); continue; }
-      const d = await resp.json();
-      if (d.values) allRows.push(...d.values);
-    }
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: allRows })); } catch(e) {}
-    return allRows;
-  } catch(e) { console.error('readSheetRawLarge error', sheetName, e); return []; }
-}
 
-async function readSheetLarge(sheetName) {
-  try {
-    const token = await getToken();
-    if (!token) return [];
-    const base = await getFileEndpoint();
-    const enc = encodeURIComponent(sheetName);
-    const h = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' };
-    const dimResp = await fetch(`${base}/workbook/worksheets('${enc}')/usedRange?$select=rowCount,columnCount`, { headers: h });
-    if (!dimResp.ok) return [];
-    const { rowCount, columnCount } = await dimResp.json();
-    if (!rowCount || !columnCount) return [];
-    const endCol = _colNumToLetter(columnCount);
-    const CHUNK = 5000;
-    const allRows = [];
-    for (let r = 1; r <= rowCount; r += CHUNK) {
-      const endRow = Math.min(r + CHUNK - 1, rowCount);
-      const resp = await fetch(`${base}/workbook/worksheets('${enc}')/range(address='A${r}:${endCol}${endRow}')?$select=values`, { headers: h });
-      if (!resp.ok) { break; }
-      const d = await resp.json();
-      if (d.values) allRows.push(...d.values);
-    }
-    if (allRows.length < 2) return [];
-    const headers = allRows[0];
-    return allRows.slice(1).map(row => {
-      const obj = {};
-      headers.forEach((hd, i) => { obj[String(hd)] = row[i]; });
-      return obj;
-    });
-  } catch(e) { console.error('readSheetLarge error', sheetName, e); return []; }
-}
+      let team = 'Other';
+      if (dir === 'inbound') {
+        const tn = String(r[iTeam] || '').trim();
+        const num = normNum(r[iNum]);
+        let how = 'unattributed';
+        if (tn) { team = tn; how = 'team_name'; }
+        else if (numberTeam[num]) { team = numberTeam[num]; how = 'cfg_numbers'; }
+        else if (NUMBER_TEAM[num]) { team = NUMBER_TEAM[num]; how = 'built_in_list'; }
+        attrib[how]++;
+        const it = inboundTeams[team] || (inboundTeams[team] = { calls: 0, answered: 0, viaNumber: 0 });
+        it.calls++; if (answered) it.answered++; if (how === 'cfg_numbers' || how === 'built_in_list') it.viaNumber++;
+      } else if (dir === 'outbound') {
+        team = agentTeam[user] || 'Unmapped';
+      }
 
-// ============================================================
-// ISO WEEK HELPERS
-// ============================================================
-function isoWeekToRange(week) {
-  const year = new Date().getUTCFullYear();
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const jan4Day = (jan4.getUTCDay() + 6) % 7;
-  const wkStart = new Date(jan4.getTime() - jan4Day * 86400000 + (week - 1) * 7 * 86400000);
-  const wkEnd   = new Date(wkStart.getTime() + 7 * 86400000);
-  return { wkStart: wkStart.getTime() / 1000, wkEnd: wkEnd.getTime() / 1000 };
-}
+      weekCounts[loc.weekKey] = (weekCounts[loc.weekKey] || 0) + 1;
 
-function getLatestDataWeek() {
-  const wks = [...new Set((globalData.agentStatsRows||[]).map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-  return wks.length ? Number(wks[wks.length-1]) : getCurrentISOWeek();
-}
+      // Hourly team aggregate
+      const hk = loc.date + '|' + loc.hour + '|' + dir + '|' + team;
+      let h = hourly[hk];
+      if (!h) {
+        h = { weekKey: loc.weekKey, isoYear: loc.isoYear, isoWeek: loc.isoWeek, date: loc.date, weekday: loc.weekday,
+          hour: loc.hour, direction: dir, team: team, calls: 0, answered: 0, missed: 0, missedOoh: 0,
+          missedAbandoned: 0, connected10s: 0, talkSecs: 0 };
+        hourly[hk] = h;
+      }
+      h.calls++;
+      if (answered) h.answered++;
+      else {
+        h.missed++;
+        if (reason === 'out_of_opening_hours') h.missedOoh++;
+        else if (reason.indexOf('abandoned') >= 0) h.missedAbandoned++;
+      }
+      if (dir === 'outbound' && answered && dur >= 10) h.connected10s++;
+      h.talkSecs += talk;
 
-function getCurrentISOWeek() {
-  const date = new Date();
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const dayNum = (d.getUTCDay() + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - dayNum + 3);
-  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const firstDayNum = (firstThu.getUTCDay() + 6) % 7;
-  firstThu.setUTCDate(firstThu.getUTCDate() - firstDayNum + 3);
-  return 1 + Math.round((d.getTime() - firstThu.getTime()) / (7 * 24 * 3600 * 1000));
-}
-
-// ============================================================
-// DATA HELPERS
-// ============================================================
-function fmtHrs(sec) {
-  if (!sec || sec <= 0) return '—';
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  if (h > 0 && m > 0) return `${h}h ${m}m`;
-  if (h > 0) return `${h}h`;
-  if (m > 0) return `${m}m`;
-  return '—';
-}
-
-function parseTimeSec(t) {
-  if (!t) return 0;
-  const s = String(t);
-  const parts = s.split(':');
-  if (parts.length === 3) return (+parts[0])*3600 + (+parts[1])*60 + (+parts[2]);
-  const num = parseFloat(t);
-  if (!isNaN(num) && num > 0) return Math.round(num * 86400);
-  return 0;
-}
-
-function scoreStyle(u) {
-  if (u >= 85) return { bg:'#f0fdf4', col:'#15803d' };
-  if (u >= 61) return { bg:'#fffbeb', col:'#b45309' };
-  return { bg:'#fef2f2', col:'#dc2626' };
-}
-
-function fmtSecsFull(s) {
-  if (!s || s <= 0) return '0m';
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}h ${m}m ${sec}s`;
-  return `${m}m ${sec}s`;
-}
-
-function lunchFlag(secs, partWeek) {
-  if (partWeek) return '';
-  const expMin = Math.floor((LUNCH_EXPECTED - LUNCH_TOLERANCE) / 60);
-  const expMax = Math.floor((LUNCH_EXPECTED + LUNCH_TOLERANCE) / 60);
-  const tip = `Logged: ${fmtSecsFull(secs)} | Expected: ${expMin}–${expMax} mins`;
-  if (secs <= 0) return `<span class="flag" style="background:#fffbeb;color:#b45309" title="${tip}">↓ not logged</span>`;
-  if (secs > LUNCH_EXPECTED + LUNCH_TOLERANCE) return `<span class="flag" style="background:#fef2f2;color:#dc2626" title="${tip}">↑ high</span>`;
-  if (secs < LUNCH_EXPECTED - LUNCH_TOLERANCE) return `<span class="flag" style="background:#fffbeb;color:#b45309" title="${tip}">↓ low</span>`;
-  return `<span class="flag" style="background:#f0fdf4;color:#15803d" title="${tip}">✓</span>`;
-}
-
-function dv(v) { return (v != null && v > 0) ? v : '<span class="muted">—</span>'; }
-function fh(s) { return (!s || s === '—' || s === '0h') ? '<span class="muted">—</span>' : s; }
-
-function fmtTalkTime(t) {
-  if (!t) return '—';
-  const s = parseTimeSec(t);
-  return s > 0 ? fmtHrs(s) : '—';
-}
-
-function parseOutboundRaw(rows) {
-  if (!rows || rows.length === 0) return [];
-  return rows.map(r => ({
-    wk: Number(r['Week of the year'] || r['Week'] || 0),
-    total: Number(r['Outbound calls'] || r['Outbound'] || 0),
-    conn:  Number(r['Outbound calls (connected calls > x sec)'] || r['Connected outbound calls'] || r['Connected outbound'] || 0),
-    time:  String(r['Outbound in-call time (connected calls > x sec)'] || r['Outbound in-call time'] || ''),
-  })).filter(r => r.wk > 0);
-}
-
-// ============================================================
-// INBOUND TEAM FILTERS FOR DAY CHART
-// ============================================================
-const DAY_CHART_INBOUND_TEAMS = new Set(['Support','Support Revered','Onboarding','Onboarding stage 1 calls','Risk and compliance','Credit Control','Support - Credit Control','2nd line (Tech support team)']);
-const DAY_CHART_INBOUND_NUMS  = new Set(['286844','286845','286847','286848','192211','201178','1216204','326618']);
-const DAY_CHART_OUTBOUND_AGENTS = new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']);
-
-// ============================================================
-// OPS TEAM ALLOW-LIST (agent master report + callback report)
-// ============================================================
-const OPS_TEAM_GROUPS = {
-  support:    ['Support','Support Revered','Support + Revered','Revered'],
-  onboarding: ['Onboarding','Onboarding stage 1 calls'],
-  risk:       ['Risk and compliance'],
-  credit:     ['Support - Credit Control','Credit Control'],
-  secondline: ['2nd line (Tech support team)'],
-};
-const OPS_TEAMS = new Set(Object.values(OPS_TEAM_GROUPS).flat());
-function isOpsTeam(t) { return OPS_TEAMS.has(String(t||'').trim()); }
-function teamInGroup(t, g) { return g === 'all' || (OPS_TEAM_GROUPS[g]||[]).includes(String(t||'').trim()); }
-
-// ============================================================
-// GLOBAL STATE
-// ============================================================
-let globalData = {};
-let currentHeatTeam = 'support';
-let currentHeatWeek = 'latest';
-let currentAgentTeam = 'all';
-let currentWeek = 'latest';
-let charts = {};
-
-// ============================================================
-// MAIN LOAD
-// ============================================================
-async function loadDashboard() {
-  document.getElementById('loadingScreen').style.display = 'flex';
-  document.getElementById('app').style.display = 'none';
-
-  try {
-    const [companyRows, agentStatsRows, cvRows,
-           zdRows, aiRows, cbRows, teamRows,
-           supportIn, supportOut, reveredIn, reveredOut,
-           onboardIn, onboardOut, riskIn, riskOut,
-           creditIn, creditOut, keyIn, keyOut, smartIn, smartOut,
-           rawCallsRows, aggHourlyRows] = await Promise.all([
-      readSheet('Company call data'),
-      readSheet('agent stats'),
-      readSheet('call volumes'),
-      readSheet('zendesk ticket activity'),
-      readSheet('ai summaries'),
-      readSheet('call back data'),
-      readSheet('cfg_agents '),
-      readSheetLarge('Support data inbound'),
-      readSheetLarge('Support outbound'),
-      readSheetLarge('Revered data inbound'),
-      readSheetLarge('Revered data outbound'),
-      readSheetLarge('Onboparding data inbound'),
-      readSheetLarge('Onboparding data outbound'),
-      readSheetLarge('Risk data inbound'),
-      readSheetLarge('Risk data outbound'),
-      readSheetLarge('Credit control inbound'),
-      readSheetLarge('Credit control outbound'),
-      readSheet('Key accounts inbound'),
-      readSheet('Key accounts outbound'),
-      readSheet('Smartbook inbound'),
-      readSheet('Smartbook outbound'),
-      readSheetRawLarge('raw_calls'),
-      readSheetLarge('agg_calls_hourly'),
-    ]);
-
-    const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-    const dayData = { inbound:{}, outbound:{}, missed:{}, total:{} };
-    companyRows.forEach(r => {
-      const day = r['Created Day of Week']; if (!day) return;
-      dayData.inbound[day]  = Number(r['Inbound Calls'])  || 0;
-      dayData.outbound[day] = Number(r['Outbound Calls']) || 0;
-      dayData.missed[day]   = Number(r['Missed Calls'])   || 0;
-      dayData.total[day]    = (Number(r['Inbound Calls']) || 0) + (Number(r['Outbound Calls']) || 0);
-    });
-    const totals = {
-      total:    dayOrder.reduce((s,d) => s+(dayData.total[d]||0),   0),
-      missed:   dayOrder.reduce((s,d) => s+(dayData.missed[d]||0),  0),
-      inbound:  dayOrder.reduce((s,d) => s+(dayData.inbound[d]||0), 0),
-      outbound: dayOrder.reduce((s,d) => s+(dayData.outbound[d]||0),0),
-    };
-
-    const teamDefs = [
-      { key:'support',     label:'Support',     inR:supportIn,  outR:supportOut  },
-      { key:'revered',     label:'Revered',     inR:reveredIn,  outR:reveredOut  },
-      { key:'onboarding',  label:'Onboarding',  inR:onboardIn,  outR:onboardOut  },
-      { key:'risk',        label:'Risk',        inR:riskIn,     outR:riskOut     },
-      { key:'credit',      label:'Credit ctrl', inR:creditIn,   outR:creditOut   },
-      { key:'secondline',  label:'2nd line',    inR:[],         outR:[]          },
-    ];
-
-    const agentTeamMap = {};
-    teamRows.forEach(r => {
-      const name = String(r['agent_name']||'').trim();
-      const t    = String(r['team']||'').trim();
-      if (name && t) agentTeamMap[name] = t;
-    });
-
-    function buildTeamSummary(week) {
-      const allInWeeks = [...new Set(supportIn.map(r=>r['Week of the year']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-      const latestInWeek = Number(allInWeeks[allInWeeks.length-1]);
-      const selectedInWeek = (!week||week==='latest') ? latestInWeek : Number(week);
-      const allCvWeeks = [...new Set(cvRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-      const latestCvWeek = Number(allCvWeeks[allCvWeeks.length-1]);
-      const selCvWeek = (!week||week==='latest') ? latestCvWeek : Number(week);
-      const cvWeekRows = cvRows.filter(r=>Number(r['Week'])===selCvWeek);
-      const emptyTeamRaw = () => ({inbound:0,answered:0,missed:0,outbound:0,connOut:0});
-      const rawByTeam = { support:emptyTeamRaw(), revered:emptyTeamRaw(), onboarding:emptyTeamRaw(), risk:emptyTeamRaw(), credit:emptyTeamRaw(), secondline:emptyTeamRaw() };
-      const rawRows = globalData.rawCallsRows || [];
-      if (rawRows.length > 1) {
-        const rHdrs = rawRows[0].map(h=>String(h).trim());
-        const rDir=rHdrs.indexOf('direction'), rStart=rHdrs.indexOf('started_at');
-        const rAns=rHdrs.indexOf('answered_at'), rTeam=rHdrs.indexOf('team_name');
-        const rNum=rHdrs.indexOf('number_id'), rUser=rHdrs.indexOf('user_name');
-        const { wkStart, wkEnd } = isoWeekToRange(selectedInWeek);
-        const TF = {
-          support:    { t:new Set(['Support']),                                   n:new Set(['286844','286845','286847','286848','192211']) },
-          revered:    { t:new Set(['Support Revered','Support + Revered']),        n:new Set([]) },
-          onboarding: { t:new Set(['Onboarding','Onboarding stage 1 calls']),      n:new Set(['201178']) },
-          risk:       { t:new Set(['Risk and compliance']),                        n:new Set(['1216204']) },
-          credit:     { t:new Set(['Credit Control','Support - Credit Control']),  n:new Set([]) },
-          secondline: { t:new Set(['2nd line (Tech support team)']),               n:new Set(['326618']) },
-        };
-        for (let i=1;i<rawRows.length;i++) {
-          const row=rawRows[i];
-          const ts=Number(row[rStart]);
-          if (!ts||ts<wkStart||ts>=wkEnd) continue;
-          const dir=String(row[rDir]||'').trim();
-          const ans=row[rAns]!==''&&row[rAns]!=null;
-          if (dir==='inbound') {
-            const tm=String(row[rTeam]||'').trim(), nm=String(row[rNum]||'').trim();
-            for (const [key,f] of Object.entries(TF)) { if (f.t.has(tm)||f.n.has(nm)) { rawByTeam[key].inbound++; if(ans) rawByTeam[key].answered++; else rawByTeam[key].missed++; break; } }
-          } else if (dir==='outbound') {
-            const agentTm=agentTeamMap[String(row[rUser]||'').trim()]||'';
-            for (const [key,f] of Object.entries(TF)) { if (f.t.has(agentTm)) { rawByTeam[key].outbound++; if(ans) rawByTeam[key].connOut++; break; } }
-          }
+      // Agent weekly aggregate
+      if (user) {
+        const ak = loc.weekKey + '|' + user;
+        let a = agents[ak];
+        if (!a) {
+          a = { weekKey: loc.weekKey, isoYear: loc.isoYear, isoWeek: loc.isoWeek, user: user,
+            team: agentTeam[user] || 'Unmapped', inboundAnswered: 0, outboundTotal: 0,
+            outboundConnected10s: 0, talkInSecs: 0, talkOutSecs: 0 };
+          agents[ak] = a;
         }
-      }
-      return teamDefs.map(def => {
-        const inF  = def.inR.find(r=>Number(r['Week of the year'])===selectedInWeek)||null;
-        const outF = def.outR.find(r=>Number(r['Week of the year'])===selectedInWeek)||null;
-        const raw  = rawByTeam[def.key]||emptyTeamRaw();
-        const inbound   = inF ? (Number(inF['Inbound calls'])||0)   : raw.inbound;
-        const answered  = inF ? (Number(inF['Answered inbound'])||0) : raw.answered;
-        const missed    = inF ? (Number(inF['Unanswered inbound calls'])||0) : raw.missed;
-        const answerPct = inF ? (parseFloat(inF['Percentage of answered inbound calls'])||0)*100 : (inbound>0?answered/inbound*100:0);
-        const inTalkTime = inF ? String(inF['Inbound in-call time']||'') : '';
-        let outbound=outF?(Number(outF['Outbound calls'])||0):raw.outbound;
-        let connOut=outF?(Number(outF['Outbound calls (connected calls > x sec)'])||0):raw.connOut;
-        let outTalkTime=outF?String(outF['Outbound in-call time (connected calls > x sec)']||''):'';
-        if (def.key==='secondline') {
-          outbound=0; connOut=0;
-          const slAgents=new Set(teamRows.filter(r=>String(r['team']||'').trim()==='2nd line (Tech support team)').map(r=>String(r['agent_name']||'').trim()));
-          cvWeekRows.forEach(r=>{ const ag=String(r['User']||'').trim(); if(!slAgents.has(ag)) return; outbound+=Number(r['Outbound calls']||r['Outbound']||0); connOut+=Number(r['Connected outbound calls']||r['Connected outbound']||0); });
-        }
-        const connPct=outbound>0?connOut/outbound*100:0;
-        return { key:def.key, label:def.label, inbound, answered, answerPct, inTalkTime, outbound, connOut, connPct, outTalkTime, missed };
-      });
-    }
-    const teamSummary = buildTeamSummary('latest');
-
-    const agentTeam = {};
-    teamRows.forEach(r => { const name=String(r['agent_name']||'').trim(); const team=String(r['team']||'').trim(); if(name&&team) agentTeam[name]=team; });
-
-    const _aiMap = {};
-    aiRows.forEach(r=>{ const name=String(r['Agent name']||'').trim(); if(name) _aiMap[name]=String(r['Summary']||''); });
-
-    const latestAgentWeek = Math.max(0, ...agentStatsRows.map(r => Number(r['Week']) || 0));
-
-    // ============================================================
-    // AGENT MASTER REPORT — built for ONE week.
-    // Availability, call counts, talk time and Zendesk all use the same week.
-    // ============================================================
-    function buildAgents(week) {
-      const wk = (!week || week === 'latest' || week === 'custom') ? latestAgentWeek : Number(week);
-      const isPart = wk === getCurrentISOWeek();
-      const daysElapsed = isPart ? Math.min(5, ((new Date().getDay() + 6) % 7) + 1) : 5;
-      const contracted = CONTRACTED_SECS * daysElapsed / 5;
-
-      // Call volumes sheet (same week)
-      const cvMap = {};
-      cvRows.filter(r => Number(r['Week']) === wk).forEach(r => { const n = String(r['User']||'').trim(); if (n) cvMap[n] = r; });
-
-      // Zendesk (same week)
-      const zdMap = {};
-      zdRows.filter(r => Number(r['Week']) === wk).forEach(r => {
-        const n = String(r['Agent name']||'').trim(); if (!n) return;
-        if (!zdMap[n]) zdMap[n] = { internal:0, public:0, solved:0 };
-        zdMap[n].internal += Number(r['Internal comments'])||0;
-        zdMap[n].public   += Number(r['Public comments'])||0;
-        zdMap[n].solved   += Number(r['Tickets solved'])||0;
-      });
-
-      // Raw calls (same week): fallback call counts + talk time
-      const rawCounts = {}, talk = {};
-      if (rawCallsRows && rawCallsRows.length > 1) {
-        const h = rawCallsRows[0].map(x => String(x).trim());
-        const iDir=h.indexOf('direction'), iAns=h.indexOf('answered_at'), iUser=h.indexOf('user_name'),
-              iDur=h.indexOf('duration'), iSt=h.indexOf('started_at'), iEnd=h.indexOf('ended_at');
-        const { wkStart, wkEnd } = isoWeekToRange(wk);
-        for (let i = 1; i < rawCallsRows.length; i++) {
-          const row = rawCallsRows[i];
-          const ts = Number(row[iSt]);
-          if (!ts || ts < wkStart || ts >= wkEnd) continue;
-          const user = String(row[iUser]||'').trim(); if (!user) continue;
-          const dir = String(row[iDir]||'').trim();
-          const ans = row[iAns] !== '' && row[iAns] != null;
-          const dur = Number(row[iDur]||0);
-          if (!rawCounts[user]) rawCounts[user] = { answeredInbound:0, connectedOutbound:0, totalOutbound:0 };
-          if (dir === 'inbound' && ans) rawCounts[user].answeredInbound++;
-          if (dir === 'outbound') { rawCounts[user].totalOutbound++; if (ans && dur >= 10) rawCounts[user].connectedOutbound++; }
-          if (ans && row[iEnd] !== '' && row[iEnd] != null) {
-            const secs = Number(row[iEnd]) - Number(row[iAns]);
-            if (secs > 0) {
-              if (!talk[user]) talk[user] = { inbound:0, outbound:0 };
-              if (dir === 'inbound')  talk[user].inbound  += secs;
-              if (dir === 'outbound') talk[user].outbound += secs;
-            }
-          }
-        }
-      }
-
-      // Availability (agent stats, same week)
-      const agg = {};
-      agentStatsRows.forEach(r => {
-        if (Number(r['Week']) !== wk) return;
-        const name = String(r['Agent Name']||'').trim();
-        if (!name || name === 'null' || name === 'Agent Name') return;
-        if (!agg[name]) agg[name] = {};
-        const add = (k, c) => { agg[name][k] = (agg[name][k]||0) + parseTimeSec(r[c]); };
-        add('available','Available'); add('in_call','In call'); add('after_call_work','After Call Work');
-        add('on_a_break','On break'); add('out_for_lunch','Out for lunch'); add('in_training','In training');
-        add('doing_back_office','Back Office'); add('do_not_disturb','Do not disturb');
-      });
-
-      return Object.entries(agg).map(([name, s]) => {
-        const cv = cvMap[name] || null, zd = zdMap[name] || null, ai = _aiMap[name] || null, rc = rawCounts[name] || null;
-        const inb      = cv ? Number(cv['Answered inbound calls'] || cv['Answered inbound'] || 0)   : (rc ? rc.answeredInbound : 0);
-        const out      = cv ? Number(cv['Connected outbound calls'] || cv['Connected outbound'] || 0) : (rc ? rc.connectedOutbound : 0);
-        const totalOut = cv ? Number(cv['Outbound calls'] || cv['Outbound'] || 0)                     : (rc ? rc.totalOutbound : 0);
-        const gs = k => s[k] || 0;
-        const allowedAcw    = (inb + out) * 180;
-        const investigation = (out * 60) + (inb * 30);
-        const excessAcw     = Math.max(0, gs('after_call_work') - allowedAcw);
-        const callProd = Math.max(0, gs('in_call') + Math.min(gs('after_call_work'), allowedAcw) + investigation + gs('doing_back_office') + gs('in_training') - excessAcw);
-        const comments = zd ? (zd.internal + zd.public) : 0;
-        const callUtil = Math.min(Math.round(callProd / contracted * 100), 100);
-        const zdUtil   = Math.min(Math.round(comments * COMMENT_TIME / contracted * 100), 100);
-        const tt = talk[name] || { inbound:0, outbound:0 };
-        return { name, team: agentTeam[name] || '—', excess_acw: excessAcw, available: gs('available'), in_call: gs('in_call'),
-                 after_call_work: gs('after_call_work'), allowed_acw: allowedAcw, investigation,
-                 doing_back_office: gs('doing_back_office'), in_training: gs('in_training'),
-                 out_for_lunch: gs('out_for_lunch'), on_a_break: gs('on_a_break'),
-                 inbound_calls: inb, outbound_calls: out, total_outbound: totalOut, callUtil, zdUtil, partWeek: isPart, cv, zd, ai,
-                 talk_inbound: tt.inbound, talk_outbound: tt.outbound };
-      }).filter(a => {
-        if (isOpsTeam(a.team)) return true;
-        console.info('Agent report: excluded', a.name, '→', a.team);
-        return false;
-      }).sort((a, b) => (b.callUtil + b.zdUtil) - (a.callUtil + a.zdUtil));
-    }
-
-    const agents = buildAgents(currentWeek);
-
-    // ============================================================
-    // OUTBOUND CONNECTION RATE — counted by AGENT (cfg_agents team), not by team phone number.
-    // Agents ring out from their own lines, so team-number sheets under-count (Support + Revered showed 0).
-    // Source 1: 'call volumes' (per agent, per week) — same figures as the agent master report.
-    // Source 2: raw_calls — talk time always; counts only if a team has no call-volumes rows that week.
-    // ============================================================
-    function buildOutboundSummary(week) {
-      const cvWeeks = [...new Set(cvRows.map(r => Number(r['Week'])).filter(w => w))].sort((a, b) => a - b);
-      const wk = (!week || week === 'latest') ? (cvWeeks[cvWeeks.length - 1] || getCurrentISOWeek()) : Number(week);
-      const GROUPS = [
-        { key:'supportrev', label:'Support + Revered', g:'support'    },
-        { key:'onboarding', label:'Onboarding',        g:'onboarding' },
-        { key:'risk',       label:'Risk',              g:'risk'       },
-        { key:'credit',     label:'Credit ctrl',       g:'credit'     },
-        { key:'secondline', label:'2nd line',          g:'secondline' },
-      ];
-      const res = {};
-      GROUPS.forEach(x => { res[x.key] = { total:0, conn:0, talk:0, fromCv:false }; });
-      const groupOf = name => {
-        const t = agentTeamMap[String(name || '').trim()] || '';
-        const hit = GROUPS.find(x => teamInGroup(t, x.g));
-        return hit ? hit.key : null;
-      };
-
-      // 1) Call volumes sheet (per agent)
-      cvRows.filter(r => Number(r['Week']) === wk).forEach(r => {
-        const k = groupOf(r['User']); if (!k) return;
-        res[k].total += Number(r['Outbound calls'] || r['Outbound'] || 0);
-        res[k].conn  += Number(r['Connected outbound calls'] || r['Connected outbound'] || 0);
-        res[k].fromCv = true;
-      });
-
-      // 2) Raw calls (per agent): talk time, plus counts where call volumes has nothing
-      const rc = rawCallsRows || [];
-      if (rc.length > 1) {
-        const h = rc[0].map(x => String(x).trim());
-        const iDir=h.indexOf('direction'), iSt=h.indexOf('started_at'), iAns=h.indexOf('answered_at'),
-              iEnd=h.indexOf('ended_at'), iUser=h.indexOf('user_name'), iDur=h.indexOf('duration');
-        const { wkStart, wkEnd } = isoWeekToRange(wk);
-        for (let i = 1; i < rc.length; i++) {
-          const row = rc[i]; const ts = Number(row[iSt]);
-          if (!ts || ts < wkStart || ts >= wkEnd) continue;
-          if (String(row[iDir] || '').trim() !== 'outbound') continue;
-          const k = groupOf(row[iUser]); if (!k) continue;
-          const ans = row[iAns] !== '' && row[iAns] != null;
-          if (!res[k].fromCv) { res[k].total++; if (ans && Number(row[iDur] || 0) >= 10) res[k].conn++; }
-          if (ans && row[iEnd] !== '' && row[iEnd] != null) {
-            const secs = Number(row[iEnd]) - Number(row[iAns]);
-            if (secs > 0) res[k].talk += secs;
-          }
-        }
-      }
-
-      const toHms = s => { s = Math.round(s); return Math.floor(s / 3600) + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
-      return GROUPS.map(x => {
-        const r = res[x.key];
-        return { key:x.key, label:x.label, outTotal:r.total, outConn:r.conn,
-                 connPct: r.total > 0 ? r.conn / r.total * 100 : 0,
-                 outTalkTime: r.talk > 0 ? toHms(r.talk) : '' };
-      });
-    }
-    const outboundSummary = buildOutboundSummary('latest');
-
-    globalData = { totals,dayOrder,dayData,companyRows,teamSummary,agents,cbRows,weekNum:agentStatsRows[0]?.['Week']||'—',
-      agentStatsRows,cvRows,zdRows,teamRows,agentTeamMap,aiMap:_aiMap,teamDefs,
-      buildTeamSummary,buildOutboundSummary,outboundSummary,buildAgents,
-      supportOut,reveredOut,onboardOut,riskOut,creditOut,rawCallsRows,aggHourlyRows,
-      availableWeeks:[...new Set(agentStatsRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b)) };
-
-    const cfgNumbersRows = await readSheetRaw('cfg_numbers ');
-    const cfgAgentsRows  = await readSheetRaw('cfg_agents ');
-    const numTeamMap={};
-    if (cfgNumbersRows&&cfgNumbersRows.length>1) { for(let i=1;i<cfgNumbersRows.length;i++){const id=String(cfgNumbersRows[i][0]||'').trim();const tm=String(cfgNumbersRows[i][1]||'').trim();if(id) numTeamMap[id]=tm;} }
-    const agentTeamMapHeat={};
-    if (cfgAgentsRows&&cfgAgentsRows.length>1) { for(let i=1;i<cfgAgentsRows.length;i++){const nm=String(cfgAgentsRows[i][0]||'').trim();const tm=String(cfgAgentsRows[i][1]||'').trim();if(nm) agentTeamMapHeat[nm]=tm;} }
-    globalData.numTeamMap=numTeamMap;
-    globalData.agentTeamMapHeat=agentTeamMapHeat;
-    buildHeatmapsForWeek(currentHeatWeek);
-
-    renderDashboard();
-    document.getElementById('loadingScreen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-
-  } catch(e) {
-    document.getElementById('loadingScreen').innerHTML = `<div class="error-box">Failed to load data: ${e.message}</div>`;
-    console.error(e);
-  }
-}
-
-// ============================================================
-// RENDER
-// ============================================================
-function renderDashboard() {
-  const { totals, dayOrder, dayData, teamSummary, agents, cbRows } = globalData;
-
-  document.getElementById('weekBadge').textContent = 'Week ' + getCurrentISOWeek();
-
-  // ---- Team week filter ----
-  const teamWeekTabsEl = document.getElementById('teamWeekTabs');
-  if (teamWeekTabsEl) {
-    const tmWeeks = globalData.availableWeeks||[];
-    teamWeekTabsEl.innerHTML = '<button class="tab active" data-week="latest">Latest</button>' + tmWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    teamWeekTabsEl.onclick = e=>{
-      const btn=e.target.closest('.tab'); if(!btn) return;
-      document.querySelectorAll('#teamWeekTabs .tab').forEach(t=>t.classList.remove('active'));
-      btn.classList.add('active');
-      const newSummary=globalData.buildTeamSummary(btn.dataset.week);
-      const TC={support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c'};
-      document.getElementById('teamGrid').innerHTML=newSummary.map(t=>{
-        const tc=TC[t.key]||'#888'; const ac=t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
-        return `<div class="team-card"><div class="tc-name" style="color:${tc}">${t.label}</div><div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div><div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div><div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div><div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div><div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div></div>`;
-      }).join('');
-    };
-  }
-
-  // ---- Answer rate week filter ----
-  const answerWeekTabsEl=document.getElementById('answerWeekTabs');
-  if (answerWeekTabsEl&&globalData.teamDefs) {
-    const inWeeks=globalData.availableWeeks||[];
-    answerWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+inWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    answerWeekTabsEl.onclick = e=>{
-      const btn=e.target.closest('.tab'); if(!btn) return;
-      document.querySelectorAll('#answerWeekTabs .tab').forEach(t=>t.classList.remove('active'));
-      btn.classList.add('active');
-      const newSummary=globalData.buildTeamSummary(btn.dataset.week);
-      charts.answer.data.labels=newSummary.map(t=>t.label);
-      charts.answer.data.datasets[0].data=newSummary.map(t=>t.inbound>0?100:0);
-      charts.answer.data.datasets[0].backgroundColor=newSummary.map(()=>'rgba(99,102,241,0.25)');
-      charts.answer.data.datasets[1].data=newSummary.map(t=>t.answerPct);
-      charts.answer.data.datasets[1].backgroundColor=newSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626');
-      window._answerTeamSummary=newSummary;
-      charts.answer.update();
-    };
-    window._answerTeamSummary=teamSummary;
-  }
-
-  // ---- Agent week filter (recalculates the whole agent report for the chosen week) ----
-  const weekTabsEl=document.getElementById('weekTabs');
-  const weeks=globalData.availableWeeks||[];
-  weekTabsEl.innerHTML=['<button class="tab'+(currentWeek==="latest"?' active':'')+'" data-week="latest">Latest</button>',...weeks.map(w=>'<button class="tab'+(currentWeek==w?' active':'')+'" data-week="'+w+'">Wk '+w+'</button>')].join('');
-  weekTabsEl.onclick = e=>{
-    const btn=e.target.closest('.tab'); if(!btn) return;
-    document.querySelectorAll('#weekTabs .tab').forEach(t=>t.classList.remove('active'));
-    btn.classList.add('active');
-    currentWeek=btn.dataset.week;
-    globalData.agents = globalData.buildAgents(currentWeek);
-    renderAgents(currentAgentTeam);
-  };
-
-  // ---- Heatmap week filter ----
-  const heatWeekTabsEl=document.getElementById('heatWeekTabs');
-  heatWeekTabsEl.innerHTML=['<button class="tab'+(currentHeatWeek==="latest"?' active':'')+'" data-week="latest">Latest</button>',...weeks.map(w=>'<button class="tab'+(currentHeatWeek==w?' active':'')+'" data-week="'+w+'">Wk '+w+'</button>')].join('');
-  heatWeekTabsEl.onclick = e=>{
-    const btn=e.target.closest('.tab'); if(!btn) return;
-    document.querySelectorAll('#heatWeekTabs .tab').forEach(t=>t.classList.remove('active'));
-    btn.classList.add('active');
-    currentHeatWeek=btn.dataset.week;
-    buildHeatmapsForWeek(currentHeatWeek);
-    renderHeatmap(currentHeatTeam);
-  };
-
-  // ---- Overview metrics ----
-  function buildOpsTotals(week) {
-    const rawRows=globalData.rawCallsRows;
-    if (!rawRows||rawRows.length<2) return {total:0,inbound:0,outbound:0,missed:0};
-    const hdrs=rawRows[0].map(h=>String(h).trim());
-    const iDir=hdrs.indexOf('direction'),iStart=hdrs.indexOf('started_at'),iAns=hdrs.indexOf('answered_at');
-    const iTeam=hdrs.indexOf('team_name'),iNum=hdrs.indexOf('number_id'),iUser=hdrs.indexOf('user_name');
-    const selWk=(!week||week==='latest')?getLatestDataWeek():Number(week);
-    const {wkStart,wkEnd}=isoWeekToRange(selWk);
-    let inbound=0,outbound=0,missed=0;
-    for (let i=1;i<rawRows.length;i++) {
-      const row=rawRows[i]; const ts=Number(row[iStart]);
-      if (!ts||ts<wkStart||ts>=wkEnd) continue;
-      const dir=String(row[iDir]||'').trim(),team=String(row[iTeam]||'').trim();
-      const num=String(row[iNum]||'').trim(),user=String(row[iUser]||'').trim();
-      const ans=row[iAns]!==''&&row[iAns]!=null;
-      if (dir==='inbound') { if(!DAY_CHART_INBOUND_TEAMS.has(team)&&!DAY_CHART_INBOUND_NUMS.has(num)) continue; inbound++; if(!ans) missed++; }
-      else if (dir==='outbound') { if(!DAY_CHART_OUTBOUND_AGENTS.has((globalData.agentTeamMap||{})[user]||'')) continue; outbound++; }
-    }
-    return {total:inbound+outbound,inbound,outbound,missed};
-  }
-
-  function renderOverview(week) {
-    const t=buildOpsTotals(week);
-    document.getElementById('mTotal').textContent=t.total.toLocaleString();
-    document.getElementById('mMissed').textContent=t.missed.toLocaleString();
-    document.getElementById('mMissedPct').textContent=t.inbound>0?((t.missed/t.inbound)*100).toFixed(1)+'% of inbound':'—';
-    document.getElementById('mInbound').textContent=t.inbound.toLocaleString();
-    document.getElementById('mInboundPct').textContent=t.total>0?((t.inbound/t.total)*100).toFixed(1)+'% of total':'—';
-    document.getElementById('mOutbound').textContent=t.outbound.toLocaleString();
-    document.getElementById('mOutboundPct').textContent=t.total>0?((t.outbound/t.total)*100).toFixed(1)+'% of total':'—';
-  }
-  renderOverview('latest');
-
-  const overviewWeekTabsEl=document.getElementById('overviewWeekTabs');
-  if (overviewWeekTabsEl) {
-    const ovWeeks=globalData.availableWeeks||[];
-    overviewWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+ovWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    overviewWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#overviewWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); renderOverview(btn.dataset.week); };
-  }
-
-  // ---- Team grid ----
-  const TC={support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c'};
-  document.getElementById('teamGrid').innerHTML=teamSummary.map(t=>{
-    const tc=TC[t.key]||'#888'; const ac=t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
-    return `<div class="team-card"><div class="tc-name" style="color:${tc}">${t.label}</div><div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div><div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div><div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div><div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div><div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div></div>`;
-  }).join('');
-
-  // ---- Charts ----
-  if (charts.day) charts.day.destroy();
-  if (charts.answer) charts.answer.destroy();
-  if (charts.outbound) charts.outbound.destroy();
-
-  const DAY_TEAM_INBOUND={
-    'all':       {teams:DAY_CHART_INBOUND_TEAMS,nums:DAY_CHART_INBOUND_NUMS},
-    'support':   {teams:new Set(['Support']),nums:new Set(['286844','286845','286847','286848','192211'])},
-    'revered':   {teams:new Set(['Support Revered']),nums:new Set([])},
-    'onboarding':{teams:new Set(['Onboarding','Onboarding stage 1 calls']),nums:new Set(['201178'])},
-    'risk':      {teams:new Set(['Risk and compliance']),nums:new Set(['1216204'])},
-    'credit':    {teams:new Set(['Credit Control','Support - Credit Control']),nums:new Set([])},
-    'secondline':{teams:new Set(['2nd line (Tech support team)']),nums:new Set(['326618'])},
-  };
-  const DAY_TEAM_OUTBOUND={
-    'all':       new Set(['Support + Revered','Onboarding','Risk and compliance','Credit Control','2nd line (Tech support team)']),
-    'support':   new Set(['Support + Revered']),'revered':new Set(['Support + Revered']),
-    'onboarding':new Set(['Onboarding']),'risk':new Set(['Risk and compliance']),
-    'credit':    new Set(['Credit Control']),'secondline':new Set(['2nd line (Tech support team)']),
-  };
-  let currentDayTeam='all';
-
-  function buildDayDataFromRaw(week,teamFilter) {
-    const rawRows=globalData.rawCallsRows;
-    if (!rawRows||rawRows.length<2) return globalData.dayData;
-    const hdrs=rawRows[0].map(h=>String(h).trim());
-    const iDir=hdrs.indexOf('direction'),iStart=hdrs.indexOf('started_at'),iAns=hdrs.indexOf('answered_at');
-    const iTeam=hdrs.indexOf('team_name'),iNum=hdrs.indexOf('number_id'),iUser=hdrs.indexOf('user_name');
-    const tf=teamFilter||'all';
-    const inF=DAY_TEAM_INBOUND[tf]||DAY_TEAM_INBOUND['all'];
-    const outF=DAY_TEAM_OUTBOUND[tf]||DAY_TEAM_OUTBOUND['all'];
-    const selWk=(!week||week==='latest')?getLatestDataWeek():Number(week);
-    const {wkStart,wkEnd}=isoWeekToRange(selWk);
-    const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-    const dd={inbound:{},outbound:{},missed:{}};
-    DAYS.forEach(d=>{dd.inbound[d]=0;dd.outbound[d]=0;dd.missed[d]=0;});
-    for (let i=1;i<rawRows.length;i++) {
-      const row=rawRows[i]; const ts=Number(row[iStart]);
-      if (!ts||ts<wkStart||ts>=wkEnd) continue;
-      const dir=String(row[iDir]||'').trim(),team=String(row[iTeam]||'').trim();
-      const num=String(row[iNum]||'').trim(),user=String(row[iUser]||'').trim();
-      const ans=row[iAns]!==''&&row[iAns]!=null;
-      const dayIdx=(new Date(ts*1000).getUTCDay()+6)%7;
-      const dayName=DAYS[dayIdx];
-      if (dir==='inbound') { if(!inF.teams.has(team)&&!inF.nums.has(num)) continue; dd.inbound[dayName]++; if(!ans) dd.missed[dayName]++; }
-      else if (dir==='outbound') { if(!outF.has((globalData.agentTeamMap||{})[user]||'')) continue; dd.outbound[dayName]++; }
-    }
-    return dd;
-  }
-
-  function buildDayChartData(dd) {
-    return { labels:dayOrder.map(d=>d.slice(0,3)), datasets:[
-      {label:'Inbound',data:dayOrder.map(d=>dd.inbound[d]||0),backgroundColor:'#3b82f6'},
-      {label:'Outbound',data:dayOrder.map(d=>dd.outbound[d]||0),backgroundColor:'#15803d'},
-      {label:'Missed',data:dayOrder.map(d=>dd.missed[d]||0),backgroundColor:'#dc2626'},
-    ]};
-  }
-
-  const initialDayData=buildDayDataFromRaw('latest','all');
-  charts.day=new Chart(document.getElementById('dayChart'),{type:'bar',data:buildDayChartData(initialDayData),options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(0,0,0,.05)'}}}}});
-
-  const dayWeekTabsEl=document.getElementById('dayWeekTabs');
-  if (dayWeekTabsEl) {
-    const dayWeeks=globalData.availableWeeks||[];
-    dayWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+dayWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    dayWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#dayWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); const newDayData=buildDayDataFromRaw(btn.dataset.week,currentDayTeam); charts.day.data=buildDayChartData(newDayData); charts.day.update(); };
-  }
-  document.getElementById('dayTeamTabs').onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#dayTeamTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); currentDayTeam=btn.dataset.team; const activeWeekBtn=document.querySelector('#dayWeekTabs .tab.active'); const selWeek=activeWeekBtn?activeWeekBtn.dataset.week:'latest'; const newDayData=buildDayDataFromRaw(selWeek,currentDayTeam); charts.day.data=buildDayChartData(newDayData); charts.day.update(); };
-
-  charts.answer=new Chart(document.getElementById('answerChart'),{type:'bar',data:{labels:teamSummary.map(t=>t.label),datasets:[{label:'Received',data:teamSummary.map(t=>t.inbound>0?100:0),backgroundColor:teamSummary.map(()=>'rgba(99,102,241,0.25)'),barPercentage:0.9,categoryPercentage:0.8},{label:'Answered %',data:teamSummary.map(t=>t.answerPct),backgroundColor:teamSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626'),barPercentage:0.9,categoryPercentage:0.8}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){const t=(window._answerTeamSummary||teamSummary)[ctx.dataIndex];if(ctx.datasetIndex===0) return `Received: ${t.inbound}`;return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.inTalkTime)}`;}}}} ,scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},y:{grid:{display:false}}}}});
-
-  const outSummary=globalData.outboundSummary||[];
-  window._outboundSummary=outSummary;
-  charts.outbound=new Chart(document.getElementById('outboundChart'),{type:'bar',data:{labels:outSummary.map(t=>t.label),datasets:[{label:'Total outbound',data:outSummary.map(t=>t.outTotal>0?100:0),backgroundColor:outSummary.map(()=>'rgba(99,102,241,0.2)'),barPercentage:0.9,categoryPercentage:0.8},{label:'Connected %',data:outSummary.map(t=>t.connPct),backgroundColor:'#1d4ed8',barPercentage:0.9,categoryPercentage:0.8}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){const t=(window._outboundSummary||[])[ctx.dataIndex];if(!t) return '';if(ctx.datasetIndex===0) return `Total outbound: ${t.outTotal}`;return `Connected: ${t.outConn} (${t.connPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.outTalkTime)}`;}}}} ,scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},y:{grid:{display:false}}}}});
-
-  const outWeekTabsEl=document.getElementById('outboundWeekTabs');
-  if (outWeekTabsEl) {
-    const outWeeks=[...new Set([...(globalData.availableWeeks||[]),...parseOutboundRaw(globalData.supportOut||[]).map(r=>r.wk)])].filter(w=>w>0).sort((a,b)=>a-b);
-    outWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+outWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    outWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#outboundWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); const newOut=globalData.buildOutboundSummary(btn.dataset.week); window._outboundSummary=newOut; charts.outbound.data.labels=newOut.map(t=>t.label); charts.outbound.data.datasets[0].data=newOut.map(t=>t.outTotal>0?100:0); charts.outbound.data.datasets[0].backgroundColor=newOut.map(()=>'rgba(99,102,241,0.2)'); charts.outbound.data.datasets[1].data=newOut.map(t=>t.connPct); charts.outbound.update(); };
-  }
-
-  renderHeatmap(currentHeatTeam);
-  renderAgents(currentAgentTeam);
-  renderTrendChart();
-  document.getElementById('aiBriefPanel').style.display='block';
-  updateKeyDot();
-
-  renderCallbackReport();
-}
-
-// ============================================================
-// HEATMAPS
-// ============================================================
-function buildHeatmapsForWeek(week) {
-  const rawRows = globalData.rawCallsRows;
-  if (!rawRows || rawRows.length < 2) return;
-  const hdrs = rawRows[0].map(h => String(h).trim());
-  const iDir=hdrs.indexOf('direction'), iStart=hdrs.indexOf('started_at'), iAns=hdrs.indexOf('answered_at');
-  const iTeam=hdrs.indexOf('team_name'), iNum=hdrs.indexOf('number_id'), iUser=hdrs.indexOf('user_name');
-  const numTeamMap = globalData.numTeamMap || {};
-  const agentTeamMapHeat = globalData.agentTeamMapHeat || {};
-
-  const selWk = (!week||week==='latest') ? getLatestDataWeek() : Number(week);
-  const { wkStart, wkEnd } = isoWeekToRange(selWk);
-
-  const HOURS = [8,9,10,11,12,13,14,15,16,17];
-  const DAYS  = [0,1,2,3,4]; // Mon-Fri
-
-  const INBOUND_TEAM_MAP = {
-    support:    {teams:new Set(['Support']),                               nums:new Set(['286844','286845','286847','286848','192211'])},
-    revered:    {teams:new Set(['Support Revered','Support + Revered']),   nums:new Set([])},
-    onboarding: {teams:new Set(['Onboarding','Onboarding stage 1 calls']), nums:new Set(['201178'])},
-    risk:       {teams:new Set(['Risk and compliance']),                   nums:new Set(['1216204'])},
-    credit:     {teams:new Set(['Credit Control','Support - Credit Control']),nums:new Set([])},
-    secondline: {teams:new Set(['2nd line (Tech support team)']),          nums:new Set(['326618'])},
-  };
-  const OUTBOUND_TEAM_MAP = {
-    supportrev: new Set(['Support + Revered','Support']),
-    onboarding: new Set(['Onboarding']),
-    risk:       new Set(['Risk and compliance']),
-    credit:     new Set(['Credit Control']),
-    secondline: new Set(['2nd line (Tech support team)']),
-  };
-
-  const heatIn  = {}; const heatOut = {};
-  Object.keys(INBOUND_TEAM_MAP).forEach(k  => { heatIn[k]  = {}; DAYS.forEach(d => { heatIn[k][d]  = {}; HOURS.forEach(h => heatIn[k][d][h]  = 0); }); });
-  Object.keys(OUTBOUND_TEAM_MAP).forEach(k => { heatOut[k] = {}; DAYS.forEach(d => { heatOut[k][d] = {}; HOURS.forEach(h => heatOut[k][d][h] = 0); }); });
-
-  for (let i = 1; i < rawRows.length; i++) {
-    const row = rawRows[i];
-    const ts = Number(row[iStart]);
-    if (!ts || ts < wkStart || ts >= wkEnd) continue;
-    const d = new Date(ts * 1000);
-    const dayIdx = (d.getUTCDay() + 6) % 7;
-    if (dayIdx > 4) continue;
-    const hour = d.getUTCHours();
-    if (hour < 8 || hour > 17) continue;
-    const dir  = String(row[iDir]||'').trim();
-    const team = String(row[iTeam]||'').trim();
-    const num  = String(row[iNum]||'').trim();
-    const user = String(row[iUser]||'').trim();
-
-    if (dir === 'inbound') {
-      for (const [key, f] of Object.entries(INBOUND_TEAM_MAP)) {
-        if (f.teams.has(team) || f.nums.has(num)) { if (heatIn[key]?.[dayIdx]?.[hour] !== undefined) heatIn[key][dayIdx][hour]++; break; }
-      }
-    } else if (dir === 'outbound') {
-      const agentTeam = agentTeamMapHeat[user] || '';
-      for (const [key, f] of Object.entries(OUTBOUND_TEAM_MAP)) {
-        if (f.has(agentTeam)) { if (heatOut[key]?.[dayIdx]?.[hour] !== undefined) heatOut[key][dayIdx][hour]++; break; }
+        if (dir === 'inbound') { if (answered) a.inboundAnswered++; a.talkInSecs += talk; }
+        if (dir === 'outbound') { a.outboundTotal++; if (answered && dur >= 10) a.outboundConnected10s++; a.talkOutSecs += talk; }
       }
     }
   }
-  globalData.heatmaps = { in: heatIn, out: heatOut };
+
+  const hourlyOut: (string | number)[][] = [['week_key', 'iso_year', 'iso_week', 'date', 'weekday', 'hour',
+    'direction', 'team', 'calls', 'answered', 'missed', 'missed_ooh', 'missed_abandoned', 'connected_10s', 'talk_secs']];
+  Object.keys(hourly).sort().forEach(k => {
+    const h = hourly[k];
+    hourlyOut.push([h.weekKey, h.isoYear, h.isoWeek, h.date, h.weekday, h.hour, h.direction, h.team, h.calls,
+      h.answered, h.missed, h.missedOoh, h.missedAbandoned, h.connected10s, h.talkSecs]);
+  });
+
+  const agentOut: (string | number)[][] = [['week_key', 'iso_year', 'iso_week', 'user_name', 'team',
+    'inbound_answered', 'outbound_total', 'outbound_connected_10s', 'talk_in_secs', 'talk_out_secs']];
+  Object.keys(agents).sort().forEach(k => {
+    const a = agents[k];
+    agentOut.push([a.weekKey, a.isoYear, a.isoWeek, a.user, a.team, a.inboundAnswered, a.outboundTotal,
+      a.outboundConnected10s, a.talkInSecs, a.talkOutSecs]);
+  });
+
+  writeSheet(workbook, 'agg_calls_hourly', hourlyOut, [3]);
+  writeSheet(workbook, 'agg_agent_week', agentOut, []);
+
+  console.log('raw rows read: ' + read + ' | duplicate ids skipped: ' + dupes + ' | rows without started_at: ' + noTs);
+  console.log('agg_calls_hourly rows: ' + (hourlyOut.length - 1) + ' | agg_agent_week rows: ' + (agentOut.length - 1));
+  console.log('Inbound attribution: ' + Object.keys(attrib).map(k => k + ' ' + attrib[k]).join(' | '));
+  console.log('Inbound teams (all weeks) — team: calls / answered / of which attributed by number');
+  Object.keys(inboundTeams).sort((a, b) => inboundTeams[b].calls - inboundTeams[a].calls).forEach(t => {
+    const x = inboundTeams[t];
+    console.log('  ' + t + ': ' + x.calls + ' / ' + x.answered + ' / ' + x.viaNumber);
+  });
+  console.log('Calls per week (UK time):');
+  Object.keys(weekCounts).sort().forEach(k => console.log('  ' + k + ': ' + weekCounts[k]));
 }
 
-function renderHeatmap(teamKey) {
-  const heatmaps = globalData.heatmaps || {};
-  const HOURS = [8,9,10,11,12,13,14,15,16,17];
-  const DAY_LABELS = ['Mon','Tue','Wed','Thu','Fri'];
-
-  function renderGrid(containerId, data, colorFn) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    if (!data) { container.innerHTML = '<div style="padding:12px;color:var(--subtle);font-size:11px">No data</div>'; return; }
-    const maxVal = Math.max(1, ...Object.values(data).flatMap(d => Object.values(d)));
-    let html = `<div style="display:grid;grid-template-columns:40px repeat(${HOURS.length},1fr);gap:2px">`;
-    html += '<div></div>' + HOURS.map(h => `<div class="heat-head">${h}:00</div>`).join('');
-    [0,1,2,3,4].forEach(dayIdx => {
-      html += `<div class="heat-head" style="justify-content:flex-end;padding-right:4px">${DAY_LABELS[dayIdx]}</div>`;
-      HOURS.forEach(h => {
-        const val = data[dayIdx]?.[h] || 0;
-        const intensity = val > 0 ? 0.15 + (val / maxVal) * 0.85 : 0;
-        const bg = val > 0 ? colorFn(intensity) : 'var(--border)';
-        html += `<div class="heat-cell" style="background:${bg}"><div class="heat-cell-single" style="color:${intensity>0.4?'#fff':'var(--muted)'}">${val || ''}</div></div>`;
-      });
-    });
-    html += '</div>';
-    container.innerHTML = html;
+// Two-column lookup from a named Table (preferred) or a sheet of the same name (with or without trailing space).
+function readLookup(workbook: ExcelScript.Workbook, name: string, keyCol: string, valCol: string,
+  numericKey: boolean): { [k: string]: string } {
+  let values: (string | number | boolean)[][] = [];
+  const tbl = workbook.getTable(name);
+  if (tbl) values = tbl.getRange().getValues();
+  else {
+    const ws = workbook.getWorksheet(name) || workbook.getWorksheet(name + ' ');
+    if (ws) values = ws.getUsedRange().getValues();
   }
-
-  const blueColor   = i => `rgba(29,78,216,${i.toFixed(2)})`;
-  const greenColor  = i => `rgba(21,128,61,${i.toFixed(2)})`;
-
-  const inData = heatmaps.in?.[teamKey];
-  renderGrid('heatmap', inData, blueColor);
-
-  // Outbound team mapping
-  const outKey = teamKey === 'support' || teamKey === 'revered' ? 'supportrev' : teamKey;
-  const outData = heatmaps.out?.[outKey];
-  renderGrid('outHeatmap', outData, greenColor);
-
-  document.querySelectorAll('#heatTabs .tab').forEach(t => { if (t.dataset.team === teamKey) t.classList.add('active'); else t.classList.remove('active'); });
-  const outTabKey = (teamKey === 'support' || teamKey === 'revered') ? 'supportrev' : teamKey;
-  document.querySelectorAll('#outHeatTabs .tab').forEach(t => { if (t.dataset.team === outTabKey) t.classList.add('active'); else t.classList.remove('active'); });
-  currentHeatTeam = teamKey;
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('heatTabs').addEventListener('click', e => { const btn=e.target.closest('.tab'); if(!btn) return; renderHeatmap(btn.dataset.team); });
-  document.getElementById('outHeatTabs').addEventListener('click', e => {
-    const btn=e.target.closest('.tab'); if(!btn) return;
-    const outKey=btn.dataset.team;
-    const heatmaps=globalData.heatmaps||{};
-    const outData=heatmaps.out?.[outKey];
-    const HOURS=[8,9,10,11,12,13,14,15,16,17];
-    const DAY_LABELS=['Mon','Tue','Wed','Thu','Fri'];
-    const container=document.getElementById('outHeatmap');
-    if (!container) return;
-    if (!outData) { container.innerHTML='<div style="padding:12px;color:var(--subtle);font-size:11px">No data</div>'; }
-    else {
-      const maxVal=Math.max(1,...Object.values(outData).flatMap(d=>Object.values(d)));
-      let html=`<div style="display:grid;grid-template-columns:40px repeat(${HOURS.length},1fr);gap:2px">`;
-      html+='<div></div>'+HOURS.map(h=>`<div class="heat-head">${h}:00</div>`).join('');
-      [0,1,2,3,4].forEach(dayIdx=>{
-        html+=`<div class="heat-head" style="justify-content:flex-end;padding-right:4px">${DAY_LABELS[dayIdx]}</div>`;
-        HOURS.forEach(h=>{ const val=outData[dayIdx]?.[h]||0; const intensity=val>0?0.15+(val/maxVal)*0.85:0; const bg=val>0?`rgba(21,128,61,${intensity.toFixed(2)})`:'var(--border)'; html+=`<div class="heat-cell" style="background:${bg}"><div class="heat-cell-single" style="color:${intensity>0.4?'#fff':'var(--muted)'}">${val||''}</div></div>`; });
-      });
-      html+='</div>';
-      container.innerHTML=html;
-    }
-    document.querySelectorAll('#outHeatTabs .tab').forEach(t=>t.classList.remove('active'));
-    btn.classList.add('active');
-  });
-
-  // Section tooltips
-  const tooltip = document.createElement('div');
-  tooltip.className = 'section-tooltip';
-  tooltip.innerHTML = '<div class="section-tooltip-title" id="stTitle"></div><div id="stBody"></div><div class="section-tooltip-update" id="stUpdate"></div>';
-  document.body.appendChild(tooltip);
-  document.querySelectorAll('.info-btn').forEach(btn => {
-    btn.addEventListener('mouseenter', e => {
-      document.getElementById('stTitle').textContent = btn.closest('.section-wrap')?.querySelector('.section-label')?.textContent || '';
-      document.getElementById('stBody').textContent = btn.dataset.tip || '';
-      document.getElementById('stUpdate').textContent = btn.dataset.update ? 'Updated: ' + btn.dataset.update : '';
-      const r = btn.getBoundingClientRect();
-      tooltip.style.left = Math.min(r.left, window.innerWidth - 300) + 'px';
-      tooltip.style.top  = (r.bottom + 8) + 'px';
-      tooltip.classList.add('visible');
-    });
-    btn.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
-  });
-});
-
-// ============================================================
-// AGENT TABLE
-// ============================================================
-let _agentSortCol = 'callUtil';
-let _agentSortDir = -1;
-let _agentSearchVal = '';
-
-function renderAgents(teamFilter) {
-  currentAgentTeam = teamFilter;
-  document.querySelectorAll('#agentTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.team === teamFilter));
-
-  let agents = globalData.agents || [];
-  agents = agents.filter(a => teamInGroup(a.team, teamFilter));
-  if (_agentSearchVal) {
-    const q = _agentSearchVal.toLowerCase();
-    agents = agents.filter(a => a.name.toLowerCase().includes(q));
+  const out: { [k: string]: string } = {};
+  if (values.length < 2) { console.log('WARNING: ' + name + ' not found or empty'); return out; }
+  const h = values[0].map(x => String(x).trim());
+  const ki = h.indexOf(keyCol), vi = h.indexOf(valCol);
+  if (ki < 0 || vi < 0) { console.log('WARNING: ' + name + ' is missing column ' + (ki < 0 ? keyCol : valCol)); return out; }
+  for (let i = 1; i < values.length; i++) {
+    const k = numericKey ? normNum(values[i][ki]) : String(values[i][ki] || '').trim();
+    const v = String(values[i][vi] || '').trim();
+    if (k && v) out[k] = v;
   }
-  agents = [...agents].sort((a,b) => {
-    let av = a[_agentSortCol] ?? 0, bv = b[_agentSortCol] ?? 0;
-    if (_agentSortCol === 'zd_internal') { av = a.zd?.internal||0; bv = b.zd?.internal||0; }
-    if (_agentSortCol === 'zd_public')   { av = a.zd?.public||0;   bv = b.zd?.public||0; }
-    if (_agentSortCol === 'zd_solved')   { av = a.zd?.solved||0;   bv = b.zd?.solved||0; }
-    if (_agentSortCol === 'total_calls') { av = (a.inbound_calls||0)+(a.outbound_calls||0); bv = (b.inbound_calls||0)+(b.outbound_calls||0); }
-    return _agentSortDir * (bv - av);
-  });
-
-  const aiTooltip = document.getElementById('aiTooltip');
-  const aiTooltipText = document.getElementById('aiTooltipText');
-
-  const tbody = document.getElementById('agentBody');
-  tbody.innerHTML = agents.length ? agents.map(a => {
-    const tc = TEAM_COLORS[a.team] || '#374151';
-    const ts = TEAM_SHORT[a.team] || a.team;
-    const ss = scoreStyle(a.callUtil);
-    const excessBadge = a.excess_acw > 0 ? `<span class="excess-pill">+${fmtHrs(a.excess_acw)}</span>` : '';
-    const lf = lunchFlag(a.out_for_lunch, a.partWeek);
-    const hasSummary = a.ai ? 'has-summary' : '';
-    const zd = a.zd || {};
-    const totalCalls = (a.inbound_calls||0) + (a.outbound_calls||0);
-    return `<tr class="${hasSummary}" data-agent="${a.name}">
-      <td class="l col-agent" style="font-weight:500">${a.name}</td>
-      <td class="l col-team"><span class="team-pill" style="background:${tc}18;color:${tc}">${ts}</span></td>
-      <td>${fh(fmtHrs(a.available))}</td>
-      <td>${fh(fmtHrs(a.talk_inbound))}</td>
-      <td>${fh(fmtHrs(a.talk_outbound))}</td>
-      <td>${fh(fmtHrs(a.after_call_work))}${excessBadge}</td>
-      <td>${fh(fmtHrs(a.allowed_acw))}</td>
-      <td>${a.excess_acw > 0 ? `<span style="color:var(--red);font-weight:500">${fmtHrs(a.excess_acw)}</span>` : '<span class="muted">—</span>'}</td>
-      <td>${fh(fmtHrs(a.investigation))}</td>
-      <td>${fh(fmtHrs(a.doing_back_office))}</td>
-      <td>${fh(fmtHrs(a.in_training))}</td>
-      <td>${fh(fmtHrs(a.out_for_lunch))} ${lf}</td>
-      <td>${dv(a.inbound_calls)}</td>
-      <td>${dv(a.outbound_calls)}</td>
-      <td>${dv(a.total_outbound)}</td>
-      <td>${dv(totalCalls)}</td>
-      <td>${dv(zd.internal)}</td>
-      <td>${dv(zd.public)}</td>
-      <td>${dv(zd.solved)}</td>
-      <td><span class="score-pill" style="background:${ss.bg};color:${ss.col}">${a.callUtil}%</span></td>
-      <td><span class="score-pill" style="background:${scoreStyle(a.zdUtil).bg};color:${scoreStyle(a.zdUtil).col}">${a.zdUtil}%</span></td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="21" class="l" style="text-align:center;color:var(--subtle);padding:1rem">No agent data for this week</td></tr>';
-
-  // AI tooltip on hover
-  tbody.querySelectorAll('tr.has-summary').forEach(row => {
-    row.addEventListener('mouseenter', e => {
-      const agent = (globalData.agents||[]).find(a => a.name === row.dataset.agent);
-      if (!agent?.ai) return;
-      aiTooltipText.textContent = agent.ai;
-      const r = row.getBoundingClientRect();
-      aiTooltip.style.left = Math.min(e.clientX + 12, window.innerWidth - 360) + 'px';
-      aiTooltip.style.top  = Math.max(8, r.top - 10) + 'px';
-      aiTooltip.classList.add('visible');
-    });
-    row.addEventListener('mousemove', e => {
-      aiTooltip.style.left = Math.min(e.clientX + 12, window.innerWidth - 360) + 'px';
-    });
-    row.addEventListener('mouseleave', () => aiTooltip.classList.remove('visible'));
-  });
-
-  document.querySelectorAll('#agentTabs .tab').forEach(t => {
-    t.onclick = () => renderAgents(t.dataset.team);
-  });
-}
-
-function sortAgentTable(col) {
-  if (_agentSortCol === col) { _agentSortDir *= -1; }
-  else { _agentSortCol = col; _agentSortDir = -1; }
-  document.querySelectorAll('#agentTable th.sortable').forEach(th => {
-    th.classList.remove('sort-asc','sort-desc');
-    if (th.dataset.col === col) th.classList.add(_agentSortDir === -1 ? 'sort-desc' : 'sort-asc');
-  });
-  renderAgents(currentAgentTeam);
-}
-
-function filterAgentTable(val) {
-  _agentSearchVal = val;
-  renderAgents(currentAgentTeam);
-}
-
-function exportAgentsCSV() {
-  const agents = globalData.agents || [];
-  const headers = ['Agent','Team','Available','In talk (in)','In talk (out)','ACW','Allowed ACW','Excess ACW','Investigation','Back office','Training','Lunch','Ans. inbound','Conn. outbound','Total outbound','Total calls','ZD Internal','ZD Public','ZD Solved','Call %','ZD %'];
-  const rows = agents.map(a => [
-    a.name, a.team, fmtHrs(a.available), fmtHrs(a.talk_inbound), fmtHrs(a.talk_outbound),
-    fmtHrs(a.after_call_work), fmtHrs(a.allowed_acw), fmtHrs(a.excess_acw), fmtHrs(a.investigation),
-    fmtHrs(a.doing_back_office), fmtHrs(a.in_training), fmtHrs(a.out_for_lunch),
-    a.inbound_calls, a.outbound_calls, a.total_outbound, (a.inbound_calls||0)+(a.outbound_calls||0),
-    a.zd?.internal||0, a.zd?.public||0, a.zd?.solved||0, a.callUtil+'%', a.zdUtil+'%'
-  ]);
-  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='teg_agents.csv'; a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Custom date range is not supported yet — falls back to the latest week (see backlog)
-function applyCustomWeek() {
-  const from = document.getElementById('customFrom').value;
-  const to   = document.getElementById('customTo').value;
-  if (!from || !to) return;
-  currentWeek = 'custom';
-  globalData.agents = globalData.buildAgents(currentWeek);
-  renderAgents(currentAgentTeam);
-}
-
-// ============================================================
-// TREND CHART
-// ============================================================
-// Team key for an inbound team label in agg_calls_hourly (same team sets as the Team overview cards)
-const TREND_TEAM_OF = {
-  'Support':'support',
-  'Support Revered':'revered', 'Support + Revered':'revered',
-  'Onboarding':'onboarding', 'Onboarding stage 1 calls':'onboarding',
-  'Risk and compliance':'risk',
-  'Credit Control':'credit', 'Support - Credit Control':'credit',
-  '2nd line (Tech support team)':'secondline',
-};
-let trendWeeksShown = 12;
-
-// ISO year-week key for "now" in UK time, e.g. "2026-W42" (used to leave out the week in progress)
-function currentWeekKeyUK() {
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/London' }));
-  const wd = now.getDay() || 7;
-  const t = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 4 - wd));
-  const y = t.getUTCFullYear();
-  const w = Math.ceil(((t - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
-  return y + '-W' + String(w).padStart(2, '0');
-}
-
-// Weekly inbound totals per team from agg_calls_hourly: { '2026-W39': { support:{a,n}, ... } }
-function buildTrendFromAgg() {
-  const rows = globalData.aggHourlyRows || [];
-  const byWeek = {};
-  rows.forEach(r => {
-    if (String(r['direction'] || '').trim() !== 'inbound') return;
-    const key = TREND_TEAM_OF[String(r['team'] || '').trim()]; if (!key) return;
-    const wk = String(r['week_key'] || '').trim(); if (!wk) return;
-    if (!byWeek[wk]) byWeek[wk] = {};
-    if (!byWeek[wk][key]) byWeek[wk][key] = { a: 0, n: 0 };
-    byWeek[wk][key].a += Number(r['answered']) || 0;
-    byWeek[wk][key].n += Number(r['calls']) || 0;
-  });
-  return byWeek;
-}
-
-function renderTrendChart() {
-  if (!(globalData.aggHourlyRows || []).length) {
-    // Summary sheet missing or failed to load: fall back to the previous calculation
-    console.warn('agg_calls_hourly not loaded, using legacy trend');
-    const lbl = document.getElementById('trendLabel'); if (lbl) lbl.textContent = 'Answer rate trend — last 8 weeks';
-    const tabs = document.getElementById('trendPeriodTabs'); if (tabs) tabs.style.display = 'none';
-    return renderTrendChartLegacy();
-  }
-  const byWeek = buildTrendFromAgg();
-  const curKey = currentWeekKeyUK();
-  const allWeeks = Object.keys(byWeek).filter(k => k < curKey).sort();
-  const weeks = allWeeks.slice(-trendWeeksShown);
-  const multiYear = new Set(weeks.map(k => k.slice(0, 4))).size > 1;
-  const labelOf = k => 'Wk ' + Number(k.slice(6)) + (multiYear ? " '" + k.slice(2, 4) : '');
-  const TEAMS = [
-    { key:'support',    label:'Support',     color:'#1d4ed8' },
-    { key:'revered',    label:'Revered',     color:'#0e7490' },
-    { key:'onboarding', label:'Onboarding',  color:'#15803d' },
-    { key:'risk',       label:'Risk',        color:'#b45309' },
-    { key:'credit',     label:'Credit ctrl', color:'#7c3aed' },
-    { key:'secondline', label:'2nd line',    color:'#c2410c' },
-  ];
-  const detail = {};
-  const datasets = TEAMS.map(tm => {
-    detail[tm.key] = weeks.map(k => (byWeek[k] && byWeek[k][tm.key]) || { a: 0, n: 0 });
-    return {
-      label: tm.label, _key: tm.key, borderColor: tm.color, backgroundColor: tm.color,
-      data: detail[tm.key].map(d => d.n > 0 ? Math.round(d.a / d.n * 1000) / 10 : null),
-      tension: 0.3, fill: false, pointRadius: weeks.length > 26 ? 1.5 : 3, spanGaps: true,
-    };
-  });
-  const lbl = document.getElementById('trendLabel');
-  if (lbl) lbl.textContent = 'Answer rate trend — ' + (weeks.length < trendWeeksShown ? weeks.length + ' weeks available' : 'last ' + weeks.length + ' weeks');
-  if (charts.trend) charts.trend.destroy();
-  charts.trend = new Chart(document.getElementById('trendChart'), {
-    type: 'line',
-    data: { labels: weeks.map(labelOf), datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { position: 'top', labels: { boxWidth: 10, font: { size: 11 } } },
-        tooltip: { callbacks: {
-          title: items => items.length ? weeks[items[0].dataIndex] : '',
-          label: ctx => {
-            const d = detail[ctx.dataset._key][ctx.dataIndex];
-            return `${ctx.dataset.label}: ${ctx.parsed.y}% (${d.a} of ${d.n} answered)`;
-          } } }
-      },
-      scales: { x: { grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 14 } },
-                y: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } } }
-    }
-  });
-}
-
-document.addEventListener('click', e => {
-  const btn = e.target.closest('#trendPeriodTabs .tab'); if (!btn) return;
-  document.querySelectorAll('#trendPeriodTabs .tab').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
-  trendWeeksShown = Number(btn.dataset.n) || 12;
-  renderTrendChart();
-});
-
-function renderTrendChartLegacy() {
-  // Uses the SAME calculation as the Team overview cards (buildTeamSummary):
-  // team inbound sheet if it has a row for that week, otherwise raw_calls by team_name / team number.
-  if (!globalData.buildTeamSummary) return;
-  const weeks = (globalData.availableWeeks || []).map(Number).filter(w => w > 0).slice(-8);
-  const TEAMS = [
-    { key:'support',    label:'Support',     color:'#1d4ed8' },
-    { key:'revered',    label:'Revered',     color:'#0e7490' },
-    { key:'onboarding', label:'Onboarding',  color:'#15803d' },
-    { key:'risk',       label:'Risk',        color:'#b45309' },
-    { key:'credit',     label:'Credit ctrl', color:'#7c3aed' },
-    { key:'secondline', label:'2nd line',    color:'#c2410c' },
-  ];
-  const byWeek = weeks.map(w => globalData.buildTeamSummary(w));
-  const detail = {};   // team key -> per-week {answered, inbound}
-  const datasets = TEAMS.map(tm => {
-    detail[tm.key] = byWeek.map(s => { const x = s.find(y => y.key === tm.key); return x ? { a: x.answered, n: x.inbound } : { a: 0, n: 0 }; });
-    return {
-      label: tm.label, _key: tm.key, borderColor: tm.color, backgroundColor: tm.color,
-      data: detail[tm.key].map(d => d.n > 0 ? Math.round(d.a / d.n * 1000) / 10 : null),
-      tension: 0.3, fill: false, pointRadius: 3, spanGaps: true,
-    };
-  });
-  if (charts.trend) charts.trend.destroy();
-  charts.trend = new Chart(document.getElementById('trendChart'), {
-    type: 'line',
-    data: { labels: weeks.map(w => 'Wk ' + w), datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { position: 'top', labels: { boxWidth: 10, font: { size: 11 } } },
-        tooltip: { callbacks: { label: ctx => {
-          const d = detail[ctx.dataset._key][ctx.dataIndex];
-          return `${ctx.dataset.label}: ${ctx.parsed.y}% (${d.a} of ${d.n} answered)`;
-        } } }
-      },
-      scales: { x: { grid: { display: false } }, y: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } } }
-    }
-  });
-}
-
-// ============================================================
-// AI BRIEF + SETTINGS
-// ============================================================
-function openSettings() { document.getElementById('apiKeyInput').value=localStorage.getItem('teg_anthropic_key')||''; document.getElementById('settingsModal').classList.add('open'); }
-function closeSettings() { document.getElementById('settingsModal').classList.remove('open'); }
-function saveSettings() { const k=document.getElementById('apiKeyInput').value.trim(); if(k) localStorage.setItem('teg_anthropic_key',k); else localStorage.removeItem('teg_anthropic_key'); updateKeyDot(); closeSettings(); }
-function updateKeyDot() { const dot=document.getElementById('keyDot'); if(!dot) return; const k=localStorage.getItem('teg_anthropic_key'); dot.className='key-dot '+(k?'set':'unset'); }
-
-async function generateAIBrief() {
-  const key = localStorage.getItem('teg_anthropic_key');
-  if (!key) { openSettings(); return; }
-  const btn = document.getElementById('aiBriefBtn');
-  const textEl = document.getElementById('aiBriefText');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin-sm"></span> Generating…';
-  textEl.textContent = 'Analysing this week\'s performance data…';
-  try {
-    const agents = globalData.agents || [];
-    const teamSummary = globalData.teamSummary || [];
-    const prompt = `You are an ops analyst for Transport Exchange Group (TEG), a freight marketplace. Summarise this week's call centre performance in 3-4 sentences for leadership. Be direct and specific.
-
-Team performance:
-${teamSummary.map(t=>`- ${t.label}: ${t.inbound} inbound, ${t.answerPct.toFixed(1)}% answered, ${t.outbound} outbound, ${t.connPct.toFixed(1)}% connected`).join('\n')}
-
-Top agents by call productivity:
-${agents.slice(0,5).map(a=>`- ${a.name} (${a.team}): ${a.inbound_calls} inbound answered, ${a.outbound_calls} outbound connected, ${a.callUtil}% call productivity`).join('\n')}
-
-Highlight any teams with answer rates below 70%, standout performers, and overall throughput. Keep it concise.`;
-
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'x-api-key':key, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
-      body:JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:400, messages:[{role:'user',content:prompt}] })
-    });
-    const data = await resp.json();
-    textEl.textContent = data.content?.[0]?.text || 'Unable to generate summary.';
-  } catch(e) {
-    textEl.textContent = 'Error: ' + e.message;
-  }
-  btn.disabled = false;
-  btn.innerHTML = '✦ Regenerate';
-}
-
-// ============================================================
-// CALLBACK REPORT (v2) — period + team filters, KPIs, trend, team split, week detail
-// ============================================================
-const CB_STATE = { period: 8, team: 'all', showAll: false, open: {}, ctx: null };
-const CB_DAY = 86400000;
-const CB_TEAM_COLOURS = {
-  'Support':'#1d4ed8','Support Revered':'#0e7490','Support + Revered':'#1d4ed8','Revered':'#0e7490',
-  'Onboarding':'#15803d','Onboarding stage 1 calls':'#166534',
-  'Risk and compliance':'#b45309','Credit Control':'#7c3aed','Support - Credit Control':'#7c3aed',
-  '2nd line (Tech support team)':'#c2410c','Unrouted':'#6b7280'
-};
-
-function cbParseDate(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = Number(v);
-  if (!isNaN(n) && n > 40000) { const d = new Date((n - 25569) * CB_DAY); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); }
-  const s = String(v).trim();
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
-  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return new Date(+m[3], +m[2] - 1, +m[1]); // DD/MM/YYYY
-  return null;
-}
-function cbMonday(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
-function cbAddWeeks(t, n) { const x = new Date(t); x.setDate(x.getDate() + n * 7); return x.getTime(); }
-function cbIsoWeek(d) {
-  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7) + 3);
-  const f = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
-  f.setUTCDate(f.getUTCDate() - ((f.getUTCDay() + 6) % 7) + 3);
-  return 1 + Math.round((t - f) / (7 * CB_DAY));
-}
-function cbPctColour(p) { return p >= 70 ? 'var(--green)' : p >= 50 ? 'var(--amber)' : 'var(--red)'; }
-function cbFmtDay(d) { return ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(d.getDay() + 6) % 7] + ' ' + d.getDate() + '/' + (d.getMonth() + 1); }
-function cbSum(rows) { let req = 0, cb = 0; rows.forEach(r => { req += r.req; cb += r.cb; }); return { req, cb, na: req - cb, pct: req ? cb / req * 100 : 0 }; }
-
-function cbRows() {
-  const out = [];
-  (globalData.cbRows || []).forEach(r => {
-    const d = cbParseDate(r['Date']); if (!d) return;
-    const team = String(r['Team'] || '').trim();
-    const unrouted = !team || team === 'Unrouted';
-    if (!unrouted && !isOpsTeam(team)) return;          // ops teams only (Sales, Renewals, Smartbook etc. excluded)
-    const req = Number(r['Callback req']) || 0;
-    const cb  = Math.min(req, Number(r['Called back']) || 0);
-    out.push({ d, mon: cbMonday(d).getTime(), team, unrouted, req, cb });
-  });
   return out;
 }
 
-function cbDelta(cur, prev, opts) {
-  if (prev === null) return `<span class="muted">${opts.label}</span>`;
-  let d, txt;
-  if (opts.pts) { d = cur - prev; txt = (d > 0 ? '+' : '') + d.toFixed(1) + ' pts'; }
-  else {
-    if (!prev) return cur ? `<span class="muted">none in previous ${opts.label}</span>` : `<span class="muted">${opts.label}</span>`;
-    d = (cur - prev) / prev * 100; txt = (d > 0 ? '+' : '') + Math.round(d) + '%';
+// Number IDs can arrive as 202266, 202266.0 or '202266 ' — normalise to '202266'.
+function normNum(v: string | number | boolean): string {
+  const s = String(v === null || v === undefined ? '' : v).trim();
+  if (!s) return '';
+  const n = Number(s);
+  return isNaN(n) ? s : String(Math.round(n));
+}
+
+// Clear (or create) a sheet and write rows in chunks. textCols = column indexes to keep as text (e.g. dates).
+function writeSheet(workbook: ExcelScript.Workbook, name: string, rows: (string | number)[][], textCols: number[]) {
+  const ws: ExcelScript.Worksheet = workbook.getWorksheet(name) || workbook.addWorksheet(name);
+  ws.getRange().clear(ExcelScript.ClearApplyTo.contents);
+  const cols = rows[0].length;
+  textCols.forEach(c => ws.getRangeByIndexes(0, c, Math.max(rows.length, 1), 1).setNumberFormatLocal('@'));
+  for (let s = 0; s < rows.length; s += WRITE_CHUNK) {
+    const part = rows.slice(s, s + WRITE_CHUNK);
+    ws.getRangeByIndexes(s, 0, part.length, cols).setValues(part);
   }
-  if (Math.abs(d) < 0.5) return `<span class="muted">no change vs previous ${opts.label}</span>`;
-  const col = opts.neutral ? 'var(--muted)' : ((opts.lowerIsBetter ? d < 0 : d > 0) ? 'var(--green)' : 'var(--red)');
-  return `<span style="color:${col}">${txt} vs previous ${opts.label}</span>`;
 }
 
-function renderCallbackReport() {
-  const all = cbRows();
-  const thisMon = cbMonday(new Date()).getTime();
-  const minMon = all.length ? Math.min(...all.map(r => r.mon)) : thisMon;
-  const n = CB_STATE.period === 'all'
-    ? Math.max(1, Math.round((thisMon - minMon) / (7 * CB_DAY)) + 1)
-    : CB_STATE.period;
-
-  const weeks = [];
-  for (let i = n - 1; i >= 0; i--) weeks.push(cbAddWeeks(thisMon, -i));
-  const prevWeeks = CB_STATE.period === 'all' ? [] : weeks.map(w => cbAddWeeks(w, -n));
-  const wSet = new Set(weeks), pSet = new Set(prevWeeks);
-  const teamOk = r => !r.unrouted && teamInGroup(r.team, CB_STATE.team);
-
-  const cur  = all.filter(r => wSet.has(r.mon) && teamOk(r));
-  const prev = all.filter(r => pSet.has(r.mon) && teamOk(r));
-  const a = cbSum(cur), b = prevWeeks.length ? cbSum(prev) : null;
-  const lbl = CB_STATE.period === 'all' ? 'all weeks' : n + ' weeks';
-
-  // ---- Headline figures ----
-  document.getElementById('cbmReq').textContent = a.req.toLocaleString();
-  document.getElementById('cbmCb').textContent  = a.cb.toLocaleString();
-  document.getElementById('cbmNa').textContent  = a.na.toLocaleString();
-  const pctEl = document.getElementById('cbmPct');
-  pctEl.textContent = a.req ? a.pct.toFixed(1) + '%' : '—';
-  pctEl.style.color = a.req ? cbPctColour(a.pct) : 'var(--muted)';
-  document.getElementById('cbdReq').innerHTML = cbDelta(a.req, b && b.req, { label: lbl, neutral: true });
-  document.getElementById('cbdCb').innerHTML  = cbDelta(a.cb,  b && b.cb,  { label: lbl });
-  document.getElementById('cbdNa').innerHTML  = cbDelta(a.na,  b && b.na,  { label: lbl, lowerIsBetter: true });
-  document.getElementById('cbdPct').innerHTML = cbDelta(a.pct, b && b.req ? b.pct : null, { label: lbl, pts: true });
-
-  // ---- Unrouted warning (only if any remain) ----
-  const unr = CB_STATE.team === 'all' ? cbSum(all.filter(r => wSet.has(r.mon) && r.unrouted)).req : 0;
-  const note = document.getElementById('cbUnroutedNote');
-  note.style.display = unr ? 'block' : 'none';
-  note.textContent = unr ? `⚠ ${unr} callback${unr === 1 ? '' : 's'} in this period could not be matched to a team and are not included above.` : '';
-
-  // ---- Weekly trend chart ----
-  const perWeek = weeks.map(w => cbSum(cur.filter(r => r.mon === w)));
-  const labels = weeks.map(w => 'Wk ' + cbIsoWeek(new Date(w)) + (w === thisMon ? ' *' : ''));
-  if (charts.cb) charts.cb.destroy();
-  charts.cb = new Chart(document.getElementById('cbChart'), {
-    type: 'bar',
-    data: { labels, datasets: [
-      { label: 'Called back',     data: perWeek.map(s => s.cb), backgroundColor: '#15803d', stack: 's', order: 2 },
-      { label: 'Not called back', data: perWeek.map(s => s.na), backgroundColor: '#f87171', stack: 's', order: 2 },
-      { type: 'line', label: '% called back', data: perWeek.map(s => s.req ? Math.round(s.pct) : null),
-        borderColor: '#1d4ed8', backgroundColor: '#1d4ed8', yAxisID: 'y1', tension: 0.3, pointRadius: 3, spanGaps: true, order: 1 },
-    ]},
-    options: {
-      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 11 } } },
-        tooltip: { callbacks: { label: ctx => ctx.dataset.yAxisID === 'y1' ? `% called back: ${ctx.parsed.y}%` : `${ctx.dataset.label}: ${ctx.parsed.y}` } }
-      },
-      scales: {
-        x:  { stacked: true, grid: { display: false } },
-        y:  { stacked: true, beginAtZero: true, grid: { color: 'rgba(0,0,0,.05)' }, ticks: { precision: 0 } },
-        y1: { position: 'right', min: 0, max: 100, grid: { display: false }, ticks: { callback: v => v + '%' } }
-      }
-    }
-  });
-
-  // ---- By team ----
-  const byTeam = {};
-  cur.forEach(r => { (byTeam[r.team] = byTeam[r.team] || []).push(r); });
-  const teamList = Object.entries(byTeam).map(([t, rs]) => ({ t, s: cbSum(rs) })).sort((x, y) => y.s.req - x.s.req);
-  document.getElementById('cbTeams').innerHTML = teamList.length
-    ? '<div class="cb-team-row head"><span>Team</span><span>Called back</span><span style="text-align:right">Requests</span><span style="text-align:right">%</span></div>' +
-      teamList.map(({ t, s }) => {
-        const col = CB_TEAM_COLOURS[t] || '#374151';
-        return `<div class="cb-team-row">
-          <span><span class="team-pill" style="background:${col}18;color:${col}">${t}</span></span>
-          <span class="cb-bar"><span style="width:${Math.round(s.pct)}%;background:${cbPctColour(s.pct)}"></span></span>
-          <span style="text-align:right">${s.req}</span>
-          <span style="text-align:right;color:${cbPctColour(s.pct)};font-weight:600">${Math.round(s.pct)}%</span>
-        </div>`;
-      }).join('')
-    : '<div style="color:var(--subtle);font-size:11px;padding:8px 0">No callbacks in this period</div>';
-
-  // ---- Week detail ----
-  CB_STATE.ctx = weeks.map((w, i) => ({ w, s: perWeek[i], rows: cur.filter(r => r.mon === w) })).filter(x => x.s.req > 0).reverse();
-  cbRenderDetail();
-
-  // ---- Controls (onclick assignment, so safe to re-run on Refresh) ----
-  document.getElementById('cbPeriodTabs').onclick = e => {
-    const btn = e.target.closest('.tab'); if (!btn) return;
-    document.querySelectorAll('#cbPeriodTabs .tab').forEach(t => t.classList.toggle('active', t === btn));
-    CB_STATE.period = btn.dataset.p === 'all' ? 'all' : Number(btn.dataset.p);
-    CB_STATE.showAll = false;
-    renderCallbackReport();
-  };
-  document.getElementById('cbTeamTabs').onclick = e => {
-    const btn = e.target.closest('.tab'); if (!btn) return;
-    document.querySelectorAll('#cbTeamTabs .tab').forEach(t => t.classList.toggle('active', t === btn));
-    CB_STATE.team = btn.dataset.cbteam;
-    renderCallbackReport();
-  };
+// Convert a Unix timestamp to UK local time (GMT/BST) and its ISO week.
+function ukLocal(ts: number): { date: string; hour: number; weekday: number; isoYear: number; isoWeek: number; weekKey: string } {
+  const ms = ts * 1000;
+  const y = new Date(ms).getUTCFullYear();
+  const bstStart = lastSundayUtc1am(y, 2);
+  const bstEnd = lastSundayUtc1am(y, 9);
+  const offset = (ms >= bstStart && ms < bstEnd) ? 3600000 : 0;
+  const d = new Date(ms + offset); // read with UTC getters = UK wall-clock time
+  const date = d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+  const weekday = d.getUTCDay() || 7; // 1 = Mon ... 7 = Sun
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 4 - weekday));
+  const isoYear = t.getUTCFullYear();
+  const isoWeek = Math.ceil(((t.getTime() - Date.UTC(isoYear, 0, 1)) / 86400000 + 1) / 7);
+  return { date, hour: d.getUTCHours(), weekday, isoYear, isoWeek, weekKey: isoYear + '-W' + pad(isoWeek) };
 }
 
-function cbRenderDetail() {
-  const list = CB_STATE.ctx || [];
-  const shown = CB_STATE.showAll ? list : list.slice(0, 4);
-  let html = '';
-  shown.forEach(x => {
-    const start = new Date(x.w), end = new Date(x.w); end.setDate(end.getDate() + 6);
-    const open = !!CB_STATE.open[x.w];
-    html += `<tr class="cb-week-row${open ? ' open' : ''}" data-mon="${x.w}">
-      <td class="l"><strong>Week ${cbIsoWeek(start)}</strong> <span class="muted">${start.getDate()}/${start.getMonth() + 1}–${end.getDate()}/${end.getMonth() + 1}</span></td>
-      <td>${x.s.req}</td>
-      <td style="color:var(--green);font-weight:500">${x.s.cb || '—'}</td>
-      <td style="color:var(--red);font-weight:500">${x.s.na || '—'}</td>
-      <td style="color:${cbPctColour(x.s.pct)};font-weight:600">${Math.round(x.s.pct)}%</td>
-    </tr>`;
-    if (open) {
-      const g = {};
-      x.rows.forEach(r => {
-        const k = r.d.getTime() + '|' + r.team;
-        if (!g[k]) g[k] = { d: r.d, team: r.team, req: 0, cb: 0 };
-        g[k].req += r.req; g[k].cb += r.cb;
-      });
-      Object.values(g).sort((p, q) => p.d - q.d || q.req - p.req).forEach(z => {
-        const p = z.req ? z.cb / z.req * 100 : 0;
-        const col = CB_TEAM_COLOURS[z.team] || '#374151';
-        html += `<tr class="cb-day-row">
-          <td class="l">${cbFmtDay(z.d)} <span class="team-pill" style="background:${col}18;color:${col};font-size:9px;margin-left:6px">${z.team}</span></td>
-          <td>${z.req}</td><td>${z.cb || '—'}</td><td>${(z.req - z.cb) || '—'}</td>
-          <td style="color:${cbPctColour(p)}">${Math.round(p)}%</td>
-        </tr>`;
-      });
-    }
-  });
-  document.getElementById('cbBody').innerHTML = html ||
-    '<tr><td colspan="5" style="text-align:center;color:var(--subtle);padding:1rem">No callbacks in this period</td></tr>';
-
-  document.querySelectorAll('#cbBody tr.cb-week-row').forEach(tr => {
-    tr.onclick = () => { const k = tr.dataset.mon; CB_STATE.open[k] = !CB_STATE.open[k]; cbRenderDetail(); };
-  });
-
-  const more = document.getElementById('cbMore');
-  more.innerHTML = list.length > 4
-    ? `<button class="tab" id="cbMoreBtn">${CB_STATE.showAll ? 'Show fewer weeks' : 'Show all ' + list.length + ' weeks'}</button>`
-    : '';
-  const btn = document.getElementById('cbMoreBtn');
-  if (btn) btn.onclick = () => { CB_STATE.showAll = !CB_STATE.showAll; cbRenderDetail(); };
+// Clocks change at 01:00 UTC on the last Sunday of March (month 2) and October (month 9).
+function lastSundayUtc1am(year: number, month: number): number {
+  const last = new Date(Date.UTC(year, month + 1, 0));
+  return Date.UTC(year, month, last.getUTCDate() - last.getUTCDay(), 1);
 }
 
-// ============================================================
-// BOOT
-// ============================================================
-(async () => {
-  const ok = await initAuth();
-  if (ok) loadDashboard();
-})();
-</script>
-</body>
-</html>
+function pad(n: number): string { return (n < 10 ? '0' : '') + n; }
