@@ -285,7 +285,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
         <button class="tab active" data-week="latest">Latest</button>
       </div>
     </div>
-    <div class="section-wrap" style="margin-top:0"><div class="section-label">Operations overview</div><button class="info-btn" data-tip="Call counts for ops teams (Support, Revered, Onboarding, Risk, Credit control, 2nd line). Inbound = calls offered to the team, excluding out-of-hours and abandoned/IVR hang-ups. Missed = offered but not answered (Revered&#39;s missed calls can&#39;t be attributed, so they aren&#39;t included). Outbound = calls made by agents in ops teams." data-update="From agg_calls_hourly (weekly summary of raw calls)">i</button></div>
+    <div class="section-wrap" style="margin-top:0"><div class="section-label">Operations overview</div><button class="info-btn" data-tip="Call counts for ops teams (Support, Revered, Onboarding, Risk, Credit control, 2nd line). Inbound = calls offered to the team, excluding out-of-hours and abandoned/IVR hang-ups. Missed = offered but not answered. Missed calls on the shared Known numbers line are attributed using the routing Worker&#39;s decisions (from Wk 30); any it couldn&#39;t place aren&#39;t counted. Outbound = calls made by agents in ops teams." data-update="From agg_calls_hourly (weekly summary of raw calls)">i</button></div>
     <div class="metrics-row">
       <div class="metric-card has-days"><div class="mc-main"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub" id="mTotalSub">Mon–Sun</div></div><div class="mc-days" id="mTotalDays"></div></div>
       <div class="metric-card has-days"><div class="mc-main"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div><div class="mc-days" id="mMissedDays"></div></div>
@@ -320,7 +320,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div id="teamGrid" class="team-grid"></div>
 
-    <div class="section-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:6px"><div class="section-label" id="trendLabel">Answer rate trend</div><button class="info-btn" data-tip="Inbound answer rate per team for completed weeks (the current week is left out until it finishes). Answered ÷ inbound calls offered to the team (out-of-hours and abandoned/IVR hang-ups excluded, as in the callback report), in UK time. Revered shows answered calls only: its missed calls arrive via the shared Known numbers flow and can&#39;t be attributed. Hover a week to see answered vs received." data-update="From agg_calls_hourly (weekly summary of raw calls)">i</button></div><div class="tabs" id="trendPeriodTabs" style="margin-bottom:0"><button class="tab" data-n="8">8 wks</button><button class="tab active" data-n="12">12 wks</button><button class="tab" data-n="26">26 wks</button><button class="tab" data-n="52">52 wks</button></div></div>
+    <div class="section-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:6px"><div class="section-label" id="trendLabel">Answer rate trend</div><button class="info-btn" data-tip="Inbound answer rate per team for completed weeks (the current week is left out until it finishes). Answered ÷ inbound calls offered to the team (out-of-hours and abandoned/IVR hang-ups excluded, as in the callback report), in UK time. Revered&#39;s missed calls arrive via the shared Known numbers line and are attributed using the routing Worker&#39;s decisions (available from Wk 30); weeks without routing data are dashed and show answered calls only. A small number of missed calls the router couldn&#39;t place stay Unrouted and aren&#39;t counted against any team. Hover a week to see answered vs received." data-update="From agg_calls_hourly (weekly summary of raw calls)">i</button></div><div class="tabs" id="trendPeriodTabs" style="margin-bottom:0"><button class="tab" data-n="8">8 wks</button><button class="tab active" data-n="12">12 wks</button><button class="tab" data-n="26">26 wks</button><button class="tab" data-n="52">52 wks</button></div></div>
     <div class="trend-card"><div class="trend-wrap"><canvas id="trendChart"></canvas></div></div>
 
     <div class="two-col">
@@ -1797,7 +1797,7 @@ function renderTrendChart() {
   const labelOf = k => 'Wk ' + Number(k.slice(6)) + (multiYear ? " '" + k.slice(2, 4) : '');
   const TEAMS = [
     { key:'support',    label:'Support',     color:'#1d4ed8' },
-    { key:'revered',    label:'Revered (answered only)', color:'#0e7490', note:'Missed calls reach Revered via the shared Known numbers flow and cannot be attributed, so this shows answered calls only' },
+    { key:'revered',    label:'Revered',     color:'#0e7490', flagAnsweredOnly:true },
     { key:'onboarding', label:'Onboarding',  color:'#15803d' },
     { key:'risk',       label:'Risk',        color:'#b45309' },
     { key:'credit',     label:'Credit ctrl', color:'#7c3aed' },
@@ -1806,9 +1806,12 @@ function renderTrendChart() {
   const detail = {};
   const datasets = TEAMS.map(tm => {
     detail[tm.key] = weeks.map(k => (byWeek[k] && byWeek[k][tm.key]) || { a: 0, n: 0 });
+    // Revered's missed calls only come from the routing Worker cache. A week with no missed calls attributed
+    // (all calls answered) means no routing data for that week, so it is drawn dashed and flagged in the tooltip.
+    const flags = tm.flagAnsweredOnly ? detail[tm.key].map(d => d.n > 0 && d.a >= d.n) : null;
     return {
-      label: tm.label, _key: tm.key, _note: tm.note || '', borderColor: tm.color, backgroundColor: tm.color,
-      borderDash: tm.note ? [4, 4] : [],
+      label: tm.label, _key: tm.key, _flags: flags, borderColor: tm.color, backgroundColor: tm.color,
+      segment: flags ? { borderDash: c => (flags[c.p0DataIndex] || flags[c.p1DataIndex]) ? [4, 4] : undefined } : undefined,
       data: detail[tm.key].map(d => d.n > 0 ? Math.round(d.a / d.n * 1000) / 10 : null),
       tension: 0.3, fill: false, pointRadius: weeks.length > 26 ? 1.5 : 3, spanGaps: true,
     };
@@ -1830,8 +1833,8 @@ function renderTrendChart() {
             return `${ctx.dataset.label}: ${ctx.parsed.y}% (${d.a} of ${d.n} answered)`;
           },
           afterBody: items => {
-            const n = items.map(i => i.dataset._note).filter(Boolean);
-            return n.length ? ['', '⚠ ' + n[0]] : [];
+            const flagged = items.some(i => i.dataset._flags && i.dataset._flags[i.dataIndex]);
+            return flagged ? ['', '⚠ Revered: no routing data for this week, so its missed calls', '  can\'t be attributed and only answered calls are shown'] : [];
           } } }
       },
       scales: { x: { grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 14 } },
