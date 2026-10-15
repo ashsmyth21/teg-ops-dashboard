@@ -840,25 +840,25 @@ async function loadDashboard() {
            rawCallsSkipped, aggHourlyRows, aggAgentRows] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
-      readSheet('call volumes'),
+      Promise.resolve([]), // retired: call volumes (replaced by agg sheets)
       readSheet('zendesk ticket activity'),
       readSheet('ai summaries'),
       readSheet('call back data'),
       readSheet('cfg_agents '),
-      readSheetLarge('Support data inbound'),
-      readSheetLarge('Support outbound'),
-      readSheetLarge('Revered data inbound'),
-      readSheetLarge('Revered data outbound'),
-      readSheetLarge('Onboparding data inbound'),
-      readSheetLarge('Onboparding data outbound'),
-      readSheetLarge('Risk data inbound'),
-      readSheetLarge('Risk data outbound'),
-      readSheetLarge('Credit control inbound'),
-      readSheetLarge('Credit control outbound'),
-      readSheet('Key accounts inbound'),
-      readSheet('Key accounts outbound'),
-      readSheet('Smartbook inbound'),
-      readSheet('Smartbook outbound'),
+      Promise.resolve([]), // retired: Support data inbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Support outbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Revered data inbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Revered data outbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Onboparding data inbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Onboparding data outbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Risk data inbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Risk data outbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Credit control inbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Credit control outbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Key accounts inbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Key accounts outbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Smartbook inbound (replaced by agg sheets)
+      Promise.resolve([]), // retired: Smartbook outbound (replaced by agg sheets)
       Promise.resolve([]), // raw_calls only loaded as a fallback (below)
       readSheetLarge('agg_calls_hourly'),
       readSheetLarge('agg_agent_week'),
@@ -905,10 +905,10 @@ async function loadDashboard() {
 
     function buildTeamSummary(week) {
       const allInWeeks = [...new Set(supportIn.map(r=>r['Week of the year']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-      const latestInWeek = Number(allInWeeks[allInWeeks.length-1]);
+      const latestInWeek = Number(allInWeeks[allInWeeks.length-1]) || getCurrentISOWeek();
       const selectedInWeek = (!week||week==='latest') ? latestInWeek : Number(week);
       const allCvWeeks = [...new Set(cvRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b));
-      const latestCvWeek = Number(allCvWeeks[allCvWeeks.length-1]);
+      const latestCvWeek = Number(allCvWeeks[allCvWeeks.length-1]) || getCurrentISOWeek();
       const selCvWeek = (!week||week==='latest') ? latestCvWeek : Number(week);
       const cvWeekRows = cvRows.filter(r=>Number(r['Week'])===selCvWeek);
       const emptyTeamRaw = () => ({inbound:0,answered:0,missed:0,outbound:0,connOut:0});
