@@ -379,7 +379,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div class="card" style="margin-bottom:12px"><div id="outHeatmap" class="heat-grid"></div></div>
 
-    <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score — all for the selected week. Mid-week, scores are measured against the working days so far. Hover an agent name for their AI coaching summary." data-update="Availability &amp; calls: weekly (Monday 6am). Zendesk: daily. AI summaries: weekly.">i</button></div>
+    <div class="section-wrap"><div class="section-label">Agent master report</div><button class="info-btn" data-tip="Per-agent Aircall availability, call volumes, Zendesk ticket activity and productivity score — all for the selected week. Mid-week, scores are measured against the working days so far. Hover an agent name for their AI coaching summary." data-update="Availability (incl. ACW): weekly (Monday 6am). Calls &amp; talk time: agg_agent_week summary (any week since Wk 24). Zendesk: daily. AI summaries: weekly.">i</button></div>
     <div id="weekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
       <div class="tabs" id="weekTabs" style="margin-bottom:0">
@@ -835,7 +835,7 @@ async function loadDashboard() {
            supportIn, supportOut, reveredIn, reveredOut,
            onboardIn, onboardOut, riskIn, riskOut,
            creditIn, creditOut, keyIn, keyOut, smartIn, smartOut,
-           rawCallsRows, aggHourlyRows] = await Promise.all([
+           rawCallsRows, aggHourlyRows, aggAgentRows] = await Promise.all([
       readSheet('Company call data'),
       readSheet('agent stats'),
       readSheet('call volumes'),
@@ -859,6 +859,7 @@ async function loadDashboard() {
       readSheet('Smartbook outbound'),
       readSheetRawLarge('raw_calls'),
       readSheetLarge('agg_calls_hourly'),
+      readSheetLarge('agg_agent_week'),
     ]);
 
     const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -988,9 +989,19 @@ async function loadDashboard() {
         zdMap[n].solved   += Number(r['Tickets solved'])||0;
       });
 
-      // Raw calls (same week): fallback call counts + talk time
+      // Summary sheet (agg_agent_week): call counts + talk time for any week since W24.
+      // Connected outbound = talk time >= 10s, matching Aircall. Used in preference to call volumes / raw calls.
+      const aggAgent = {};
+      (aggAgentRows || []).forEach(r => {
+        if (Number(r['iso_week']) !== wk) return;
+        const n = String(r['user_name'] || '').trim(); if (!n) return;
+        aggAgent[n] = r;
+      });
+      const hasAgg = Object.keys(aggAgent).length > 0;
+
+      // Raw calls (same week): fallback call counts + talk time when the summary sheet has no rows for this week
       const rawCounts = {}, talk = {};
-      if (rawCallsRows && rawCallsRows.length > 1) {
+      if (!hasAgg && rawCallsRows && rawCallsRows.length > 1) {
         const h = rawCallsRows[0].map(x => String(x).trim());
         const iDir=h.indexOf('direction'), iAns=h.indexOf('answered_at'), iUser=h.indexOf('user_name'),
               iDur=h.indexOf('duration'), iSt=h.indexOf('started_at'), iEnd=h.indexOf('ended_at');
@@ -1032,9 +1043,17 @@ async function loadDashboard() {
 
       return Object.entries(agg).map(([name, s]) => {
         const cv = cvMap[name] || null, zd = zdMap[name] || null, ai = _aiMap[name] || null, rc = rawCounts[name] || null;
-        const inb      = cv ? Number(cv['Answered inbound calls'] || cv['Answered inbound'] || 0)   : (rc ? rc.answeredInbound : 0);
-        const out      = cv ? Number(cv['Connected outbound calls'] || cv['Connected outbound'] || 0) : (rc ? rc.connectedOutbound : 0);
-        const totalOut = cv ? Number(cv['Outbound calls'] || cv['Outbound'] || 0)                     : (rc ? rc.totalOutbound : 0);
+        const ag = hasAgg ? (aggAgent[name] || null) : null;
+        let inb, out, totalOut;
+        if (hasAgg) {
+          inb      = ag ? Number(ag['inbound_answered']) || 0 : 0;
+          out      = ag ? Number(ag['outbound_connected_10s']) || 0 : 0;
+          totalOut = ag ? Number(ag['outbound_total']) || 0 : 0;
+        } else {
+          inb      = cv ? Number(cv['Answered inbound calls'] || cv['Answered inbound'] || 0)   : (rc ? rc.answeredInbound : 0);
+          out      = cv ? Number(cv['Connected outbound calls'] || cv['Connected outbound'] || 0) : (rc ? rc.connectedOutbound : 0);
+          totalOut = cv ? Number(cv['Outbound calls'] || cv['Outbound'] || 0)                     : (rc ? rc.totalOutbound : 0);
+        }
         const gs = k => s[k] || 0;
         const allowedAcw    = (inb + out) * 180;
         const investigation = (out * 60) + (inb * 30);
@@ -1043,7 +1062,8 @@ async function loadDashboard() {
         const comments = zd ? (zd.internal + zd.public) : 0;
         const callUtil = Math.min(Math.round(callProd / contracted * 100), 100);
         const zdUtil   = Math.min(Math.round(comments * COMMENT_TIME / contracted * 100), 100);
-        const tt = talk[name] || { inbound:0, outbound:0 };
+        const tt = hasAgg ? { inbound: ag ? Number(ag['talk_in_secs']) || 0 : 0, outbound: ag ? Number(ag['talk_out_secs']) || 0 : 0 }
+                          : (talk[name] || { inbound:0, outbound:0 });
         return { name, team: agentTeam[name] || '—', excess_acw: excessAcw, available: gs('available'), in_call: gs('in_call'),
                  after_call_work: gs('after_call_work'), allowed_acw: allowedAcw, investigation,
                  doing_back_office: gs('doing_back_office'), in_training: gs('in_training'),
@@ -1125,7 +1145,7 @@ async function loadDashboard() {
     globalData = { totals,dayOrder,dayData,companyRows,teamSummary,agents,cbRows,weekNum:agentStatsRows[0]?.['Week']||'—',
       agentStatsRows,cvRows,zdRows,teamRows,agentTeamMap,aiMap:_aiMap,teamDefs,
       buildTeamSummary,buildOutboundSummary,outboundSummary,buildAgents,
-      supportOut,reveredOut,onboardOut,riskOut,creditOut,rawCallsRows,aggHourlyRows,
+      supportOut,reveredOut,onboardOut,riskOut,creditOut,rawCallsRows,aggHourlyRows,aggAgentRows,
       availableWeeks:[...new Set(agentStatsRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b)) };
 
     if (aggOn()) {
