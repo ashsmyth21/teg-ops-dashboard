@@ -277,9 +277,9 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
         <button class="tab active" data-week="latest">Latest</button>
       </div>
     </div>
-    <div class="section-wrap" style="margin-top:0"><div class="section-label">Operations overview</div><button class="info-btn" data-tip="Total, missed, inbound and outbound call counts for ops teams (Support, Revered, Onboarding, Risk, Credit control, 2nd line)." data-update="Live from raw calls">i</button></div>
+    <div class="section-wrap" style="margin-top:0"><div class="section-label">Operations overview</div><button class="info-btn" data-tip="Call counts for ops teams (Support, Revered, Onboarding, Risk, Credit control, 2nd line). Inbound = calls offered to the team, excluding out-of-hours and abandoned/IVR hang-ups. Missed = offered but not answered (Revered&#39;s missed calls can&#39;t be attributed, so they aren&#39;t included). Outbound = calls made by agents in ops teams." data-update="From agg_calls_hourly (weekly summary of raw calls)">i</button></div>
     <div class="metrics-row">
-      <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub">Mon–Sun</div></div>
+      <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub" id="mTotalSub">Mon–Sun</div></div>
       <div class="metric-card"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div>
       <div class="metric-card"><div class="lbl">Inbound</div><div class="val" id="mInbound">—</div><div class="sub" id="mInboundPct">—</div></div>
       <div class="metric-card"><div class="lbl">Outbound</div><div class="val" id="mOutbound">—</div><div class="sub" id="mOutboundPct">—</div></div>
@@ -1213,8 +1213,67 @@ function renderDashboard() {
     renderHeatmap(currentHeatTeam);
   };
 
+  // ---- Overview metrics (from agg_calls_hourly) ----
+  // Inbound = calls offered to ops teams (excl. out-of-hours + abandoned), same basis as the answer-rate trend.
+  // Outbound = calls by agents whose cfg_agents team is an ops team.
+  const OPS_OUTBOUND_LABELS = new Set([...DAY_CHART_OUTBOUND_AGENTS, ...Object.keys(TREND_TEAM_OF)].map(x => x.toLowerCase()));
+  function aggWeekKeys() {
+    return [...new Set((globalData.aggHourlyRows || []).map(r => String(r['week_key'] || '').trim()).filter(Boolean))].sort();
+  }
+  function buildOpsTotalsAgg(weekKey) {
+    let inbound = 0, answered = 0, outbound = 0, lastDate = '';
+    (globalData.aggHourlyRows || []).forEach(r => {
+      if (String(r['week_key'] || '').trim() !== weekKey) return;
+      const dir = String(r['direction'] || '').trim(), team = String(r['team'] || '').trim();
+      const calls = Number(r['calls']) || 0;
+      if (dir === 'inbound') {
+        if (!TREND_TEAM_OF[team]) return;
+        inbound += Math.max(calls - (Number(r['missed_ooh']) || 0) - (Number(r['missed_abandoned']) || 0), 0);
+        answered += Number(r['answered']) || 0;
+      } else if (dir === 'outbound') {
+        if (!OPS_OUTBOUND_LABELS.has(team.toLowerCase())) return;
+        outbound += calls;
+      } else return;
+      const d = String(r['date'] || '').trim(); if (d > lastDate) lastDate = d;
+    });
+    return { total: inbound + outbound, inbound, outbound, missed: Math.max(inbound - answered, 0), lastDate };
+  }
+  function renderOverview(weekKey) {
+    const t = buildOpsTotalsAgg(weekKey);
+    document.getElementById('mTotal').textContent = t.total.toLocaleString();
+    document.getElementById('mMissed').textContent = t.missed.toLocaleString();
+    document.getElementById('mMissedPct').textContent = t.inbound > 0 ? ((t.missed / t.inbound) * 100).toFixed(1) + '% of inbound offered' : '—';
+    document.getElementById('mInbound').textContent = t.inbound.toLocaleString();
+    document.getElementById('mInboundPct').textContent = t.total > 0 ? ((t.inbound / t.total) * 100).toFixed(1) + '% of total' : '—';
+    document.getElementById('mOutbound').textContent = t.outbound.toLocaleString();
+    document.getElementById('mOutboundPct').textContent = t.total > 0 ? ((t.outbound / t.total) * 100).toFixed(1) + '% of total' : '—';
+    const sub = document.getElementById('mTotalSub');
+    if (sub) {
+      if (weekKey >= currentWeekKeyUK() && t.lastDate) {
+        const d = new Date(t.lastDate + 'T12:00:00Z');
+        sub.textContent = 'Week in progress · data to ' + d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+      } else sub.textContent = 'Mon–Sun';
+    }
+  }
+
+  if ((globalData.aggHourlyRows || []).length) {
+    const ovKeys = aggWeekKeys().reverse(); // newest first
+    const overviewWeekTabsEl = document.getElementById('overviewWeekTabs');
+    if (overviewWeekTabsEl && ovKeys.length) {
+      overviewWeekTabsEl.innerHTML = '<select id="ovWeekSel" class="agent-search" style="min-width:0;padding:3px 8px;font-size:11px">' +
+        ovKeys.map((k, i) => `<option value="${k}">${i === 0 ? 'Latest — ' : ''}Wk ${Number(k.slice(6))} ${k.slice(0, 4)}</option>`).join('') +
+        '</select>';
+      overviewWeekTabsEl.onclick = null;
+      overviewWeekTabsEl.onchange = e => { if (e.target && e.target.id === 'ovWeekSel') renderOverview(e.target.value); };
+    }
+    if (ovKeys.length) renderOverview(ovKeys[0]);
+  } else {
+    console.warn('agg_calls_hourly not loaded, using legacy overview');
+    setupOverviewLegacy();
+  }
+
   // ---- Overview metrics ----
-  function buildOpsTotals(week) {
+  function buildOpsTotalsLegacy(week) {
     const rawRows=globalData.rawCallsRows;
     if (!rawRows||rawRows.length<2) return {total:0,inbound:0,outbound:0,missed:0};
     const hdrs=rawRows[0].map(h=>String(h).trim());
@@ -1235,8 +1294,8 @@ function renderDashboard() {
     return {total:inbound+outbound,inbound,outbound,missed};
   }
 
-  function renderOverview(week) {
-    const t=buildOpsTotals(week);
+  function renderOverviewLegacy(week) {
+    const t=buildOpsTotalsLegacy(week);
     document.getElementById('mTotal').textContent=t.total.toLocaleString();
     document.getElementById('mMissed').textContent=t.missed.toLocaleString();
     document.getElementById('mMissedPct').textContent=t.inbound>0?((t.missed/t.inbound)*100).toFixed(1)+'% of inbound':'—';
@@ -1245,13 +1304,15 @@ function renderDashboard() {
     document.getElementById('mOutbound').textContent=t.outbound.toLocaleString();
     document.getElementById('mOutboundPct').textContent=t.total>0?((t.outbound/t.total)*100).toFixed(1)+'% of total':'—';
   }
-  renderOverview('latest');
 
+  function setupOverviewLegacy() {
+  renderOverviewLegacy('latest');
   const overviewWeekTabsEl=document.getElementById('overviewWeekTabs');
   if (overviewWeekTabsEl) {
     const ovWeeks=globalData.availableWeeks||[];
     overviewWeekTabsEl.innerHTML='<button class="tab active" data-week="latest">Latest</button>'+ovWeeks.map(w=>`<button class="tab" data-week="${w}">Wk ${w}</button>`).join('');
-    overviewWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#overviewWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); renderOverview(btn.dataset.week); };
+    overviewWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#overviewWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); renderOverviewLegacy(btn.dataset.week); };
+  }
   }
 
   // ---- Team grid ----
