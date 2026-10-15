@@ -311,7 +311,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
 
-    <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="From agg_calls_hourly (summary of raw calls, UK time)">i</button></div>
+    <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (talk time 10s or more) for the week. Support cover = people outside Support/Revered who answered 3+ Support calls that week; their outbound that week is counted there instead of their usual team." data-update="From agg_calls_hourly (summary of raw calls, UK time)">i</button></div>
     <div id="teamWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
       <div class="tabs" id="teamWeekTabs" style="margin-bottom:0">
@@ -1174,8 +1174,8 @@ function renderDashboard() {
       document.querySelectorAll('#teamWeekTabs .tab').forEach(t=>t.classList.remove('active'));
       btn.classList.add('active');
       const newSummary=globalData.buildTeamSummary(btn.dataset.week);
+      document.getElementById('teamGrid').innerHTML=newSummary.map(t=>{ if (t.key==='cover') return teamCardHtml(t);
       const TC={support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c'};
-      document.getElementById('teamGrid').innerHTML=newSummary.map(t=>{
         const tc=TC[t.key]||'#888'; const ac=t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
         return `<div class="team-card"><div class="tc-name" style="color:${tc}">${t.label}</div><div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div><div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div><div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div><div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div><div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div></div>`;
       }).join('');
@@ -1200,7 +1200,7 @@ function renderDashboard() {
       window._answerTeamSummary=newSummary;
       charts.answer.update();
     };
-    window._answerTeamSummary=teamSummary;
+    window._answerTeamSummary=teamSummary.filter(t=>t.key!=='cover');
   }
 
   // ---- Agent week filter (recalculates the whole agent report for the chosen week) ----
@@ -1231,7 +1231,7 @@ function renderDashboard() {
   // ---- Overview metrics (from agg_calls_hourly) ----
   // Inbound = calls offered to ops teams (excl. out-of-hours + abandoned), same basis as the answer-rate trend.
   // Outbound = calls by agents whose cfg_agents team is an ops team.
-  const OPS_OUTBOUND_LABELS = new Set([...DAY_CHART_OUTBOUND_AGENTS, ...Object.keys(TREND_TEAM_OF)].map(x => x.toLowerCase()));
+  const OPS_OUTBOUND_LABELS = new Set([...DAY_CHART_OUTBOUND_AGENTS, ...Object.keys(TREND_TEAM_OF), 'Support cover'].map(x => x.toLowerCase()));
   function aggWeekKeys() {
     return [...new Set((globalData.aggHourlyRows || []).map(r => String(r['week_key'] || '').trim()).filter(Boolean))].sort();
   }
@@ -1363,11 +1363,7 @@ function renderDashboard() {
   }
 
   // ---- Team grid ----
-  const TC={support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c'};
-  document.getElementById('teamGrid').innerHTML=teamSummary.map(t=>{
-    const tc=TC[t.key]||'#888'; const ac=t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
-    return `<div class="team-card"><div class="tc-name" style="color:${tc}">${t.label}</div><div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div><div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div><div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div><div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div><div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div></div>`;
-  }).join('');
+  document.getElementById('teamGrid').innerHTML=teamSummary.map(teamCardHtml).join('');
 
   // ---- Charts ----
   if (charts.day) charts.day.destroy();
@@ -1439,7 +1435,8 @@ function renderDashboard() {
   }
   document.getElementById('dayTeamTabs').onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#dayTeamTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); currentDayTeam=btn.dataset.team; const activeWeekBtn=document.querySelector('#dayWeekTabs .tab.active'); const selWeek=activeWeekBtn?activeWeekBtn.dataset.week:'latest'; const newDayData=buildDayDataFromRaw(selWeek,currentDayTeam); charts.day.data=buildDayChartData(newDayData); charts.day.update(); };
 
-  charts.answer=new Chart(document.getElementById('answerChart'),{type:'bar',data:{labels:teamSummary.map(t=>t.label),datasets:[{label:'Received',data:teamSummary.map(t=>t.inbound>0?100:0),backgroundColor:teamSummary.map(()=>'rgba(99,102,241,0.25)'),barPercentage:0.9,categoryPercentage:0.8},{label:'Answered %',data:teamSummary.map(t=>t.answerPct),backgroundColor:teamSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626'),barPercentage:0.9,categoryPercentage:0.8}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){const t=(window._answerTeamSummary||teamSummary)[ctx.dataIndex];if(ctx.datasetIndex===0) return `Received: ${t.inbound}`;return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.inTalkTime)}`;}}}} ,scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},y:{grid:{display:false}}}}});
+  const answerSummary=teamSummary.filter(t=>t.key!=='cover'); window._answerTeamSummary=answerSummary;
+  charts.answer=new Chart(document.getElementById('answerChart'),{type:'bar',data:{labels:answerSummary.map(t=>t.label),datasets:[{label:'Received',data:answerSummary.map(t=>t.inbound>0?100:0),backgroundColor:answerSummary.map(()=>'rgba(99,102,241,0.25)'),barPercentage:0.9,categoryPercentage:0.8},{label:'Answered %',data:answerSummary.map(t=>t.answerPct),backgroundColor:answerSummary.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626'),barPercentage:0.9,categoryPercentage:0.8}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){const t=(window._answerTeamSummary||answerSummary)[ctx.dataIndex];if(ctx.datasetIndex===0) return `Received: ${t.inbound}`;return `Answered: ${t.answered} (${t.answerPct.toFixed(1)}%) | Talk time: ${fmtTalkTime(t.inTalkTime)}`;}}}} ,scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{display:false}},y:{grid:{display:false}}}}});
 
   const outSummary=globalData.outboundSummary||[];
   window._outboundSummary=outSummary;
@@ -1454,16 +1451,10 @@ function renderDashboard() {
 
   // ---- Week dropdowns for sections on the summary sheet ----
   if (aggOn()) {
-    const TCg={support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c'};
-    const renderTeamGrid = summary => {
-      document.getElementById('teamGrid').innerHTML = summary.map(t=>{
-        const tc=TCg[t.key]||'#888'; const ac=t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
-        return `<div class="team-card"><div class="tc-name" style="color:${tc}">${t.label}</div><div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div><div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div><div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div><div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div><div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div></div>`;
-      }).join('');
-    };
+    const renderTeamGrid = summary => { document.getElementById('teamGrid').innerHTML = summary.map(teamCardHtml).join(''); };
     aggWeekSelect('teamWeekTabs', wk => renderTeamGrid(aggTeamSummary(wk)));
     aggWeekSelect('answerWeekTabs', wk => {
-      const ns = aggTeamSummary(wk); window._answerTeamSummary = ns;
+      const ns = aggTeamSummary(wk).filter(t => t.key !== 'cover'); window._answerTeamSummary = ns;
       charts.answer.data.labels = ns.map(t=>t.label);
       charts.answer.data.datasets[0].data = ns.map(t=>t.inbound>0?100:0);
       charts.answer.data.datasets[0].backgroundColor = ns.map(()=>'rgba(99,102,241,0.25)');
@@ -1816,7 +1807,10 @@ const AGG_OUT_CARD_KEY = {
   'support':'support', 'support revered':'revered', 'support + revered':'revered', 'revered':'revered',
   'onboarding':'onboarding', 'onboarding stage 1 calls':'onboarding', 'risk and compliance':'risk',
   'credit control':'credit', 'support - credit control':'credit', '2nd line (tech support team)':'secondline',
+  'support cover':'cover',
 };
+// Support-side outbound (shared Support + Revered agents, plus people covering Support that week)
+function aggIsSupportSide(ck) { return ck === 'support' || ck === 'revered' || ck === 'cover'; }
 function aggOutCardKey(team) { return AGG_OUT_CARD_KEY[String(team || '').trim().toLowerCase()] || null; }
 function aggOffered(r) {
   return Math.max((Number(r['calls']) || 0) - (Number(r['missed_ooh']) || 0) - (Number(r['missed_abandoned']) || 0), 0);
@@ -1832,7 +1826,7 @@ function aggHms(s) {
 // Team overview cards + inbound answer rate chart (same shape as the old buildTeamSummary)
 function aggTeamSummary(week) {
   const wk = aggResolveWeek(week);
-  const LABELS = { support:'Support', revered:'Revered', onboarding:'Onboarding', risk:'Risk', credit:'Credit ctrl', secondline:'2nd line' };
+  const LABELS = { support:'Support', revered:'Revered', cover:'Support cover', onboarding:'Onboarding', risk:'Risk', credit:'Credit ctrl', secondline:'2nd line' };
   (globalData.teamDefs || []).forEach(d => { if (d.key && d.label) LABELS[d.key] = d.label; });
   const acc = {};
   Object.keys(LABELS).forEach(k => acc[k] = { inbound:0, answered:0, inTalk:0, outbound:0, connOut:0, outTalk:0 });
@@ -1844,6 +1838,9 @@ function aggTeamSummary(week) {
     } else if (dir === 'outbound') {
       const k = aggOutCardKey(team); if (!k || !acc[k]) return;
       acc[k].outbound += Number(r['calls']) || 0; acc[k].connOut += Number(r['connected_10s']) || 0; acc[k].outTalk += Number(r['talk_secs']) || 0;
+    } else if (dir === 'cover_answered') {
+      // Support/Revered calls answered by people covering Support (already counted in Support/Revered inbound)
+      acc.cover.inbound += Number(r['answered']) || 0; acc.cover.answered += Number(r['answered']) || 0; acc.cover.inTalk += Number(r['talk_secs']) || 0;
     }
   });
   return Object.keys(LABELS).map(k => {
@@ -1860,6 +1857,7 @@ function aggOutboundSummary(week) {
   const wk = aggResolveWeek(week);
   const GROUPS = [
     { key:'supportrev', label:'Support + Revered', cards:['support','revered'] },
+    { key:'cover',      label:'Support cover',     cards:['cover'] },
     { key:'onboarding', label:'Onboarding',        cards:['onboarding'] },
     { key:'risk',       label:'Risk',              cards:['risk'] },
     { key:'credit',     label:'Credit ctrl',       cards:['credit'] },
@@ -1891,7 +1889,7 @@ function aggDayData(week, teamFilter) {
     } else if (dir === 'outbound') {
       const ck = aggOutCardKey(team); if (!ck) return;
       // Outbound is by agent team; Support and Revered agents share one team, so both tabs show it (as before)
-      const want = tf === 'all' || ck === tf || ((tf === 'support' || tf === 'revered') && (ck === 'support' || ck === 'revered'));
+      const want = tf === 'all' || ck === tf || ((tf === 'support' || tf === 'revered') && aggIsSupportSide(ck));
       if (!want) return;
       dd.outbound[day] += Number(r['calls']) || 0;
     }
@@ -1917,11 +1915,29 @@ function aggHeatmaps(week) {
       heatIn[k][d][h] += aggOffered(r);
     } else if (dir === 'outbound') {
       const ck = aggOutCardKey(team); if (!ck) return;
-      const ok = (ck === 'support' || ck === 'revered') ? 'supportrev' : ck;
+      const ok = aggIsSupportSide(ck) ? 'supportrev' : ck;
       if (heatOut[ok]) heatOut[ok][d][h] += Number(r['calls']) || 0;
     }
   });
   return { in: heatIn, out: heatOut };
+}
+
+// Team overview card. The Support cover card shows Support calls answered by helpers plus their outbound.
+function teamCardHtml(t) {
+  const TCc={support:'#1d4ed8',revered:'#0e7490',cover:'#64748b',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c'};
+  const tc = TCc[t.key] || '#888';
+  if (t.key === 'cover') {
+    const none = !t.inbound && !t.outbound;
+    return `<div class="team-card" title="People outside Support/Revered who answered 3+ Support calls that week. Their outbound that week is counted here instead of their usual team."><div class="tc-name" style="color:${tc}">${t.label}</div>` +
+      (none ? `<div class="tc-row"><span>No cover this week</span></div>` :
+      `<div class="tc-row"><span>Support calls answered</span><span class="tc-val">${t.answered}</span></div>` +
+      `<div class="tc-row" style="margin-top:6px"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div>` +
+      `<div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div>` +
+      `<div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div>` +
+      `<div class="tc-row"><span class="muted">Already included in Support/Revered inbound</span></div>`) + `</div>`;
+  }
+  const ac=t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
+  return `<div class="team-card"><div class="tc-name" style="color:${tc}">${t.label}</div><div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div><div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div><div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div><div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div><div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div></div>`;
 }
 
 // Week dropdown (newest first) rendered into an existing tab container
