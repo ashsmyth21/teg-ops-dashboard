@@ -299,7 +299,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
         <button class="tab active" data-week="latest">Latest</button>
       </div>
     </div>
-    <div class="section-wrap" style="margin-top:0"><div class="section-label">Call volume by day</div><button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day of the week." data-update="Updated every Monday at 6am">i</button></div>
+    <div class="section-wrap" style="margin-top:0"><div class="section-label">Call volume by day</div><button class="info-btn" data-tip="Inbound, outbound and missed calls broken down by day of the week." data-update="From agg_calls_hourly (summary of raw calls, UK time)">i</button></div>
     <div class="tabs" id="dayTeamTabs">
       <button class="tab active" data-team="all">All teams</button>
       <button class="tab" data-team="support">Support</button>
@@ -311,7 +311,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div class="card" style="margin-bottom:12px"><div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>
 
-    <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="Updated every Monday at 6am">i</button></div>
+    <div class="section-wrap"><div class="section-label">Team overview</div><button class="info-btn" data-tip="Per-team inbound answer rate and outbound connection rate (calls &gt; 10s) for the week." data-update="From agg_calls_hourly (summary of raw calls, UK time)">i</button></div>
     <div id="teamWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
       <div class="tabs" id="teamWeekTabs" style="margin-bottom:0">
@@ -325,7 +325,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
 
     <div class="two-col">
       <div>
-        <div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="Updated every Monday at 6am">i</button></div>
+        <div class="section-wrap" style="margin-top:0"><div class="section-label">Inbound answer rate</div><button class="info-btn" data-tip="Percentage of inbound calls answered by each team. Green ≥70%, amber ≥50%, red below." data-update="From agg_calls_hourly (summary of raw calls, UK time)">i</button></div>
         <div id="answerWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
           <div class="tabs" id="answerWeekTabs" style="margin-bottom:0">
@@ -335,7 +335,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
         <div class="card"><div class="chart-wrap"><canvas id="answerChart"></canvas></div></div>
       </div>
       <div>
-        <div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team, based on agent team attribution." data-update="Updated every Monday at 6am">i</button></div>
+        <div class="section-wrap" style="margin-top:0"><div class="section-label">Outbound connection rate</div><button class="info-btn" data-tip="Percentage of outbound calls that connected (duration &gt; 10 seconds) per team, based on agent team attribution." data-update="From agg_calls_hourly (summary of raw calls, UK time)">i</button></div>
         <div id="outboundWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
           <div class="tabs" id="outboundWeekTabs" style="margin-bottom:0">
@@ -346,7 +346,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
       </div>
     </div>
 
-    <div class="section-wrap"><div class="section-label">Inbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of inbound call volume by hour (8am–5pm) and day of week. Darker = busier." data-update="Updated every Monday at 6am">i</button></div>
+    <div class="section-wrap"><div class="section-label">Inbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of inbound call volume by hour (8am–5pm) and day of week. Darker = busier." data-update="From agg_calls_hourly (summary of raw calls, UK time)">i</button></div>
     <div id="heatWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
       <div class="tabs" id="heatWeekTabs" style="margin-bottom:0">
@@ -363,7 +363,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div class="card" style="margin-bottom:12px"><div id="heatmap" class="heat-grid"></div></div>
 
-    <div class="section-wrap"><div class="section-label">Outbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of outbound call volume by hour (8am–5pm) and day of week per team." data-update="Live from raw calls">i</button></div>
+    <div class="section-wrap"><div class="section-label">Outbound calls by hour — weekdays</div><button class="info-btn" data-tip="Heatmap of outbound call volume by hour (8am–5pm) and day of week per team." data-update="From agg_calls_hourly (summary of raw calls, UK time)">i</button></div>
     <div id="outHeatWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span>
       <div class="tabs" id="outHeatWeekTabs" style="margin-bottom:0">
@@ -1128,6 +1128,13 @@ async function loadDashboard() {
       supportOut,reveredOut,onboardOut,riskOut,creditOut,rawCallsRows,aggHourlyRows,
       availableWeeks:[...new Set(agentStatsRows.map(r=>r['Week']).filter(w=>w))].sort((a,b)=>Number(a)-Number(b)) };
 
+    if (aggOn()) {
+      globalData.buildTeamSummary = aggTeamSummary;
+      globalData.teamSummary = aggTeamSummary('latest');
+      globalData.buildOutboundSummary = aggOutboundSummary;
+      globalData.outboundSummary = aggOutboundSummary('latest');
+    }
+
     const cfgNumbersRows = await readSheetRaw('cfg_numbers ');
     const cfgAgentsRows  = await readSheetRaw('cfg_agents ');
     const numTeamMap={};
@@ -1385,6 +1392,7 @@ function renderDashboard() {
   let currentDayTeam='all';
 
   function buildDayDataFromRaw(week,teamFilter) {
+    if (aggOn()) return aggDayData(week, teamFilter);
     const rawRows=globalData.rawCallsRows;
     if (!rawRows||rawRows.length<2) return globalData.dayData;
     const hdrs=rawRows[0].map(h=>String(h).trim());
@@ -1444,6 +1452,51 @@ function renderDashboard() {
     outWeekTabsEl.onclick = e=>{ const btn=e.target.closest('.tab'); if(!btn) return; document.querySelectorAll('#outboundWeekTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); const newOut=globalData.buildOutboundSummary(btn.dataset.week); window._outboundSummary=newOut; charts.outbound.data.labels=newOut.map(t=>t.label); charts.outbound.data.datasets[0].data=newOut.map(t=>t.outTotal>0?100:0); charts.outbound.data.datasets[0].backgroundColor=newOut.map(()=>'rgba(99,102,241,0.2)'); charts.outbound.data.datasets[1].data=newOut.map(t=>t.connPct); charts.outbound.update(); };
   }
 
+  // ---- Week dropdowns for sections on the summary sheet ----
+  if (aggOn()) {
+    const TCg={support:'#1d4ed8',revered:'#0e7490',onboarding:'#15803d',risk:'#b45309',credit:'#7c3aed',secondline:'#c2410c'};
+    const renderTeamGrid = summary => {
+      document.getElementById('teamGrid').innerHTML = summary.map(t=>{
+        const tc=TCg[t.key]||'#888'; const ac=t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626';
+        return `<div class="team-card"><div class="tc-name" style="color:${tc}">${t.label}</div><div class="tc-row"><span>Inbound</span><span class="tc-val">${t.inbound}</span></div><div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${t.answered} (${t.answerPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.answerPct)}%;background:${ac}"></div></div><div class="tc-row"><span>Outbound</span><span class="tc-val">${t.outbound}</span></div><div class="tc-row"><span>Connected</span><span class="tc-val">${t.connOut} (${t.connPct.toFixed(1)}%)</span></div><div class="tc-bar"><div class="tc-fill" style="width:${Math.round(t.connPct)}%;background:#1d4ed8"></div></div><div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${t.missed}</span></div></div>`;
+      }).join('');
+    };
+    aggWeekSelect('teamWeekTabs', wk => renderTeamGrid(aggTeamSummary(wk)));
+    aggWeekSelect('answerWeekTabs', wk => {
+      const ns = aggTeamSummary(wk); window._answerTeamSummary = ns;
+      charts.answer.data.labels = ns.map(t=>t.label);
+      charts.answer.data.datasets[0].data = ns.map(t=>t.inbound>0?100:0);
+      charts.answer.data.datasets[0].backgroundColor = ns.map(()=>'rgba(99,102,241,0.25)');
+      charts.answer.data.datasets[1].data = ns.map(t=>t.answerPct);
+      charts.answer.data.datasets[1].backgroundColor = ns.map(t=>t.answerPct>=70?'#15803d':t.answerPct>=50?'#b45309':'#dc2626');
+      charts.answer.update();
+    });
+    aggWeekSelect('outboundWeekTabs', wk => {
+      const no = aggOutboundSummary(wk); window._outboundSummary = no;
+      charts.outbound.data.labels = no.map(t=>t.label);
+      charts.outbound.data.datasets[0].data = no.map(t=>t.outTotal>0?100:0);
+      charts.outbound.data.datasets[1].data = no.map(t=>t.connPct);
+      charts.outbound.update();
+    });
+    let dayWeekSel = aggResolveWeek('latest');
+    aggWeekSelect('dayWeekTabs', wk => { dayWeekSel = wk; charts.day.data = buildDayChartData(aggDayData(wk, currentDayTeam)); charts.day.update(); });
+    document.getElementById('dayTeamTabs').onclick = e => {
+      const btn = e.target.closest('.tab'); if (!btn) return;
+      document.querySelectorAll('#dayTeamTabs .tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active');
+      currentDayTeam = btn.dataset.team;
+      charts.day.data = buildDayChartData(aggDayData(dayWeekSel, currentDayTeam)); charts.day.update();
+    };
+    // One week drives both heatmaps; the two dropdowns stay in sync
+    const setHeatWeek = wk => {
+      currentHeatWeek = wk; buildHeatmapsForWeek(wk); renderHeatmap(currentHeatTeam);
+      document.querySelectorAll('#heatWeekTabs select, #outHeatWeekTabs select').forEach(s => { s.value = wk; });
+    };
+    currentHeatWeek = aggResolveWeek('latest');
+    buildHeatmapsForWeek(currentHeatWeek);
+    aggWeekSelect('heatWeekTabs', setHeatWeek, currentHeatWeek);
+    aggWeekSelect('outHeatWeekTabs', setHeatWeek, currentHeatWeek);
+  }
+
   renderHeatmap(currentHeatTeam);
   renderAgents(currentAgentTeam);
   renderTrendChart();
@@ -1457,6 +1510,7 @@ function renderDashboard() {
 // HEATMAPS
 // ============================================================
 function buildHeatmapsForWeek(week) {
+  if (aggOn()) { globalData.heatmaps = aggHeatmaps(week); return; }
   const rawRows = globalData.rawCallsRows;
   if (!rawRows || rawRows.length < 2) return;
   const hdrs = rawRows[0].map(h => String(h).trim());
@@ -1738,6 +1792,149 @@ function applyCustomWeek() {
 // ============================================================
 // TREND CHART
 // ============================================================
+// ============================================================
+// SUMMARY-SHEET (agg_calls_hourly) ENGINE — shared by team cards, answer/connection charts,
+// call volume by day and heatmaps. Inbound = calls offered (excl. out-of-hours + abandoned).
+// ============================================================
+function aggOn() { return (globalData.aggHourlyRows || []).length > 0; }
+function aggKeysAll() {
+  return [...new Set((globalData.aggHourlyRows || []).map(r => String(r['week_key'] || '').trim()).filter(Boolean))].sort();
+}
+// Accepts 'latest', a week key ('2026-W39') or an old-style week number (39)
+function aggResolveWeek(week) {
+  const keys = aggKeysAll();
+  if (!keys.length) return '';
+  if (!week || week === 'latest') return keys[keys.length - 1];
+  const w = String(week).trim();
+  if (/^\d{4}-W\d{2}$/.test(w)) return w;
+  const n = Number(w);
+  const hits = keys.filter(k => Number(k.slice(6)) === n);
+  return hits.length ? hits[hits.length - 1] : keys[keys.length - 1];
+}
+// Outbound agent team (cfg_agents) -> team-card key
+const AGG_OUT_CARD_KEY = {
+  'support':'support', 'support revered':'revered', 'support + revered':'revered', 'revered':'revered',
+  'onboarding':'onboarding', 'onboarding stage 1 calls':'onboarding', 'risk and compliance':'risk',
+  'credit control':'credit', 'support - credit control':'credit', '2nd line (tech support team)':'secondline',
+};
+function aggOutCardKey(team) { return AGG_OUT_CARD_KEY[String(team || '').trim().toLowerCase()] || null; }
+function aggOffered(r) {
+  return Math.max((Number(r['calls']) || 0) - (Number(r['missed_ooh']) || 0) - (Number(r['missed_abandoned']) || 0), 0);
+}
+function aggRowsForWeek(weekKey) {
+  return (globalData.aggHourlyRows || []).filter(r => String(r['week_key'] || '').trim() === weekKey);
+}
+function aggHms(s) {
+  s = Math.round(s || 0); if (s <= 0) return '';
+  return Math.floor(s / 3600) + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+// Team overview cards + inbound answer rate chart (same shape as the old buildTeamSummary)
+function aggTeamSummary(week) {
+  const wk = aggResolveWeek(week);
+  const LABELS = { support:'Support', revered:'Revered', onboarding:'Onboarding', risk:'Risk', credit:'Credit ctrl', secondline:'2nd line' };
+  (globalData.teamDefs || []).forEach(d => { if (d.key && d.label) LABELS[d.key] = d.label; });
+  const acc = {};
+  Object.keys(LABELS).forEach(k => acc[k] = { inbound:0, answered:0, inTalk:0, outbound:0, connOut:0, outTalk:0 });
+  aggRowsForWeek(wk).forEach(r => {
+    const dir = String(r['direction'] || '').trim(), team = String(r['team'] || '').trim();
+    if (dir === 'inbound') {
+      const k = TREND_TEAM_OF[team]; if (!k || !acc[k]) return;
+      acc[k].inbound += aggOffered(r); acc[k].answered += Number(r['answered']) || 0; acc[k].inTalk += Number(r['talk_secs']) || 0;
+    } else if (dir === 'outbound') {
+      const k = aggOutCardKey(team); if (!k || !acc[k]) return;
+      acc[k].outbound += Number(r['calls']) || 0; acc[k].connOut += Number(r['connected_10s']) || 0; acc[k].outTalk += Number(r['talk_secs']) || 0;
+    }
+  });
+  return Object.keys(LABELS).map(k => {
+    const a = acc[k];
+    return { key:k, label:LABELS[k], inbound:a.inbound, answered:a.answered,
+      answerPct: a.inbound > 0 ? a.answered / a.inbound * 100 : 0, inTalkTime: aggHms(a.inTalk),
+      outbound:a.outbound, connOut:a.connOut, connPct: a.outbound > 0 ? a.connOut / a.outbound * 100 : 0,
+      outTalkTime: aggHms(a.outTalk), missed: Math.max(a.inbound - a.answered, 0), weekKey: wk };
+  });
+}
+
+// Outbound connection rate chart (Support + Revered combined, as before)
+function aggOutboundSummary(week) {
+  const wk = aggResolveWeek(week);
+  const GROUPS = [
+    { key:'supportrev', label:'Support + Revered', cards:['support','revered'] },
+    { key:'onboarding', label:'Onboarding',        cards:['onboarding'] },
+    { key:'risk',       label:'Risk',              cards:['risk'] },
+    { key:'credit',     label:'Credit ctrl',       cards:['credit'] },
+    { key:'secondline', label:'2nd line',          cards:['secondline'] },
+  ];
+  const res = {}; GROUPS.forEach(g => res[g.key] = { total:0, conn:0, talk:0 });
+  aggRowsForWeek(wk).forEach(r => {
+    if (String(r['direction'] || '').trim() !== 'outbound') return;
+    const ck = aggOutCardKey(r['team']); if (!ck) return;
+    const g = GROUPS.find(x => x.cards.includes(ck)); if (!g) return;
+    res[g.key].total += Number(r['calls']) || 0; res[g.key].conn += Number(r['connected_10s']) || 0; res[g.key].talk += Number(r['talk_secs']) || 0;
+  });
+  return GROUPS.map(g => { const r = res[g.key];
+    return { key:g.key, label:g.label, outTotal:r.total, outConn:r.conn, connPct: r.total > 0 ? r.conn / r.total * 100 : 0, outTalkTime: aggHms(r.talk) }; });
+}
+
+// Call volume by day. teamFilter: all | support | revered | onboarding | risk | credit | secondline
+function aggDayData(week, teamFilter) {
+  const wk = aggResolveWeek(week), tf = teamFilter || 'all';
+  const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const dd = { inbound:{}, outbound:{}, missed:{} };
+  DAYS.forEach(d => { dd.inbound[d] = 0; dd.outbound[d] = 0; dd.missed[d] = 0; });
+  aggRowsForWeek(wk).forEach(r => {
+    const wd = Number(r['weekday']); if (!(wd >= 1 && wd <= 7)) return;
+    const day = DAYS[wd - 1], dir = String(r['direction'] || '').trim(), team = String(r['team'] || '').trim();
+    if (dir === 'inbound') {
+      const k = TREND_TEAM_OF[team]; if (!k || (tf !== 'all' && k !== tf)) return;
+      const off = aggOffered(r); dd.inbound[day] += off; dd.missed[day] += Math.max(off - (Number(r['answered']) || 0), 0);
+    } else if (dir === 'outbound') {
+      const ck = aggOutCardKey(team); if (!ck) return;
+      // Outbound is by agent team; Support and Revered agents share one team, so both tabs show it (as before)
+      const want = tf === 'all' || ck === tf || ((tf === 'support' || tf === 'revered') && (ck === 'support' || ck === 'revered'));
+      if (!want) return;
+      dd.outbound[day] += Number(r['calls']) || 0;
+    }
+  });
+  return dd;
+}
+
+// Weekday heatmaps, 08:00–17:00 UK time, Mon–Fri
+function aggHeatmaps(week) {
+  const wk = aggResolveWeek(week);
+  const HOURS = [8,9,10,11,12,13,14,15,16,17], DAYS = [0,1,2,3,4];
+  const IN_KEYS = ['support','revered','onboarding','risk','credit','secondline'];
+  const OUT_KEYS = ['supportrev','onboarding','risk','credit','secondline'];
+  const blank = () => { const o = {}; DAYS.forEach(d => { o[d] = {}; HOURS.forEach(h => o[d][h] = 0); }); return o; };
+  const heatIn = {}, heatOut = {};
+  IN_KEYS.forEach(k => heatIn[k] = blank()); OUT_KEYS.forEach(k => heatOut[k] = blank());
+  aggRowsForWeek(wk).forEach(r => {
+    const d = Number(r['weekday']) - 1, h = Number(r['hour']);
+    if (!(d >= 0 && d <= 4) || h < 8 || h > 17) return;
+    const dir = String(r['direction'] || '').trim(), team = String(r['team'] || '').trim();
+    if (dir === 'inbound') {
+      const k = TREND_TEAM_OF[team]; if (!k || !heatIn[k]) return;
+      heatIn[k][d][h] += aggOffered(r);
+    } else if (dir === 'outbound') {
+      const ck = aggOutCardKey(team); if (!ck) return;
+      const ok = (ck === 'support' || ck === 'revered') ? 'supportrev' : ck;
+      if (heatOut[ok]) heatOut[ok][d][h] += Number(r['calls']) || 0;
+    }
+  });
+  return { in: heatIn, out: heatOut };
+}
+
+// Week dropdown (newest first) rendered into an existing tab container
+function aggWeekSelect(containerId, onChange, selected) {
+  const el = document.getElementById(containerId); if (!el) return;
+  const keys = aggKeysAll().reverse(); if (!keys.length) return;
+  const sel = selected && keys.includes(selected) ? selected : keys[0];
+  el.innerHTML = '<select class="agent-search agg-week-sel" style="min-width:0;padding:3px 8px;font-size:11px">' +
+    keys.map((k, i) => `<option value="${k}"${k === sel ? ' selected' : ''}>${i === 0 ? 'Latest — ' : ''}Wk ${Number(k.slice(6))} ${k.slice(0, 4)}</option>`).join('') + '</select>';
+  el.onclick = null;
+  el.onchange = e => { if (e.target && e.target.tagName === 'SELECT') onChange(e.target.value); };
+}
+
 // Team key for an inbound team label in agg_calls_hourly (same team sets as the Team overview cards)
 const TREND_TEAM_OF = {
   'Support':'support',
