@@ -34,6 +34,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .metric-card .lbl{font-size:11px;color:var(--muted);margin-bottom:2px}
 .metric-card .val{font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
 .metric-card .sub{font-size:11px;color:var(--subtle);margin-top:3px}
+.metric-card.has-days{display:flex;gap:14px;align-items:stretch}
+.mc-main{flex:0 0 auto}
+.mc-days{flex:1;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;align-items:end;min-width:0}
+.mc-day{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;font-size:9px;color:var(--muted);min-width:0}
+.mc-day .n{font-size:10px;color:var(--text);font-weight:500;white-space:nowrap}
+.mc-day .b{width:100%;max-width:18px;border-radius:2px;min-height:2px}
+.mc-day.we .b{opacity:.35}
+.mc-day.na .n{color:var(--subtle);font-weight:400}
 .team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:4px}
 .team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
 .team-card .tc-name{font-size:11px;font-weight:600;margin-bottom:8px}
@@ -279,10 +287,10 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
     <div class="section-wrap" style="margin-top:0"><div class="section-label">Operations overview</div><button class="info-btn" data-tip="Call counts for ops teams (Support, Revered, Onboarding, Risk, Credit control, 2nd line). Inbound = calls offered to the team, excluding out-of-hours and abandoned/IVR hang-ups. Missed = offered but not answered (Revered&#39;s missed calls can&#39;t be attributed, so they aren&#39;t included). Outbound = calls made by agents in ops teams." data-update="From agg_calls_hourly (weekly summary of raw calls)">i</button></div>
     <div class="metrics-row">
-      <div class="metric-card"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub" id="mTotalSub">Mon–Sun</div></div>
-      <div class="metric-card"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div>
-      <div class="metric-card"><div class="lbl">Inbound</div><div class="val" id="mInbound">—</div><div class="sub" id="mInboundPct">—</div></div>
-      <div class="metric-card"><div class="lbl">Outbound</div><div class="val" id="mOutbound">—</div><div class="sub" id="mOutboundPct">—</div></div>
+      <div class="metric-card has-days"><div class="mc-main"><div class="lbl">Total calls</div><div class="val" id="mTotal">—</div><div class="sub" id="mTotalSub">Mon–Sun</div></div><div class="mc-days" id="mTotalDays"></div></div>
+      <div class="metric-card has-days"><div class="mc-main"><div class="lbl">Missed calls</div><div class="val" id="mMissed" style="color:var(--red)">—</div><div class="sub" id="mMissedPct">—</div></div><div class="mc-days" id="mMissedDays"></div></div>
+      <div class="metric-card has-days"><div class="mc-main"><div class="lbl">Inbound</div><div class="val" id="mInbound">—</div><div class="sub" id="mInboundPct">—</div></div><div class="mc-days" id="mInboundDays"></div></div>
+      <div class="metric-card has-days"><div class="mc-main"><div class="lbl">Outbound</div><div class="val" id="mOutbound">—</div><div class="sub" id="mOutboundPct">—</div></div><div class="mc-days" id="mOutboundDays"></div></div>
     </div>
 
     <div id="dayWeekFilterBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
@@ -1222,24 +1230,56 @@ function renderDashboard() {
   }
   function buildOpsTotalsAgg(weekKey) {
     let inbound = 0, answered = 0, outbound = 0, lastDate = '';
+    const dIn = [0,0,0,0,0,0,0], dAns = [0,0,0,0,0,0,0], dOut = [0,0,0,0,0,0,0], dSeen = [0,0,0,0,0,0,0];
     (globalData.aggHourlyRows || []).forEach(r => {
       if (String(r['week_key'] || '').trim() !== weekKey) return;
       const dir = String(r['direction'] || '').trim(), team = String(r['team'] || '').trim();
       const calls = Number(r['calls']) || 0;
+      const wdn = Number(r['weekday']); const wd = (wdn >= 1 && wdn <= 7) ? wdn - 1 : -1; // 0 = Mon
       if (dir === 'inbound') {
         if (!TREND_TEAM_OF[team]) return;
-        inbound += Math.max(calls - (Number(r['missed_ooh']) || 0) - (Number(r['missed_abandoned']) || 0), 0);
-        answered += Number(r['answered']) || 0;
+        const off = Math.max(calls - (Number(r['missed_ooh']) || 0) - (Number(r['missed_abandoned']) || 0), 0);
+        const ans = Number(r['answered']) || 0;
+        inbound += off; answered += ans;
+        if (wd >= 0) { dIn[wd] += off; dAns[wd] += ans; }
       } else if (dir === 'outbound') {
         if (!OPS_OUTBOUND_LABELS.has(team.toLowerCase())) return;
         outbound += calls;
+        if (wd >= 0) dOut[wd] += calls;
       } else return;
+      if (wd >= 0) dSeen[wd] = 1;
       const d = String(r['date'] || '').trim(); if (d > lastDate) lastDate = d;
     });
-    return { total: inbound + outbound, inbound, outbound, missed: Math.max(inbound - answered, 0), lastDate };
+    const days = {
+      total:   dIn.map((v, i) => v + dOut[i]),
+      missed:  dIn.map((v, i) => Math.max(v - dAns[i], 0)),
+      inbound: dIn,
+      outbound: dOut,
+      seen: dSeen,
+    };
+    return { total: inbound + outbound, inbound, outbound, missed: Math.max(inbound - answered, 0), lastDate, days };
+  }
+  // Mini Mon–Sun bar strip inside a metric card. Days with no data yet (rest of the current week) show '–'.
+  function renderDayStrip(elId, vals, seen, color, inProgress) {
+    const el = document.getElementById(elId); if (!el) return;
+    const names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const max = Math.max(1, ...vals);
+    el.innerHTML = vals.map((v, i) => {
+      const na = inProgress && !seen[i];
+      const h = na ? 0 : Math.max(2, Math.round(v / max * 34));
+      return `<div class="mc-day${i >= 5 ? ' we' : ''}${na ? ' na' : ''}" title="${names[i]}: ${na ? 'no data yet' : v.toLocaleString()}">` +
+        `<span class="n">${na ? '–' : v.toLocaleString()}</span>` +
+        `<span class="b" style="height:${h}px;background:${na ? 'transparent' : color}"></span>` +
+        `<span>${names[i].charAt(0)}${names[i].charAt(1)}</span></div>`;
+    }).join('');
   }
   function renderOverview(weekKey) {
     const t = buildOpsTotalsAgg(weekKey);
+    const inProg = weekKey >= currentWeekKeyUK();
+    renderDayStrip('mTotalDays', t.days.total, t.days.seen, 'var(--blue-mid)', inProg);
+    renderDayStrip('mMissedDays', t.days.missed, t.days.seen, 'var(--red)', inProg);
+    renderDayStrip('mInboundDays', t.days.inbound, t.days.seen, 'var(--green)', inProg);
+    renderDayStrip('mOutboundDays', t.days.outbound, t.days.seen, 'var(--amber)', inProg);
     document.getElementById('mTotal').textContent = t.total.toLocaleString();
     document.getElementById('mMissed').textContent = t.missed.toLocaleString();
     document.getElementById('mMissedPct').textContent = t.inbound > 0 ? ((t.missed / t.inbound) * 100).toFixed(1) + '% of inbound offered' : '—';
@@ -1711,9 +1751,13 @@ let trendWeeksShown = 12;
 
 // ISO year-week key for "now" in UK time, e.g. "2026-W42" (used to leave out the week in progress)
 function currentWeekKeyUK() {
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/London' }));
-  const wd = now.getDay() || 7;
-  const t = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 4 - wd));
+  // Read today's UK calendar date without re-parsing a locale string (more robust across browsers)
+  const parts = {};
+  new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: 'numeric', day: 'numeric' })
+    .formatToParts(new Date()).forEach(p => { parts[p.type] = Number(p.value); });
+  const base = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  const wd = base.getUTCDay() || 7;
+  const t = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 4 - wd));
   const y = t.getUTCFullYear();
   const w = Math.ceil(((t - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
   return y + '-W' + String(w).padStart(2, '0');
