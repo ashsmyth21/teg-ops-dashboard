@@ -444,7 +444,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
 
     <!-- CALLBACK REPORT (v2) -->
-    <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Unanswered inbound calls that reached a team, plus callback requests — ops teams only. A call counts as called back when we ring the caller back, or they get through on an answered call, within 8 working hours (Mon–Fri 08:30–17:30). Calls still inside their 8 hours aren't counted yet. Hang-ups before a team and out-of-hours calls are excluded." data-update="Daily at 5am">i</button></div>
+    <div class="section-wrap"><div class="section-label">Callback report</div><button class="info-btn" data-tip="Unanswered inbound calls that reached a team, plus callback requests — ops teams only. A call counts as called back when we ring the caller back, or they get through on an answered call, at any time afterwards (no time limit). Calls not yet called back are left out for their first 8 working hours (Mon–Fri 08:30–17:30), then count as not called back. Hang-ups before a team and out-of-hours calls are excluded." data-update="Daily at 5am">i</button></div>
     <div class="card" style="margin-bottom:24px">
       <div class="cb-controls">
         <div class="tabs" id="cbPeriodTabs" style="margin-bottom:0">
@@ -2377,7 +2377,7 @@ async function cbExportCsv() {
       else if (!isOpsTeam(team) || !teamInGroup(team, CB_STATE.team)) return;
       const inTotals = String(r['Counted']).trim() === 'Yes' && !unrouted;
       out.push({ d, r, team: team || 'Unrouted', inTotals,
-        why: unrouted ? 'Unrouted - not in team totals' : (inTotals ? '' : 'Still within 8 hrs - counted once the window closes') });
+        why: unrouted ? 'Unrouted - not in team totals' : (inTotals ? '' : 'Not called back yet - counted after 8 working hours') });
     });
     if (!out.length) { alert('No calls in this period for the selected team.'); return; }
     out.sort((a, b) => (a.d - b.d) || String(a.r['Time (UK)']).localeCompare(String(b.r['Time (UK)'])));
