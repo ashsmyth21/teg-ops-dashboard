@@ -461,6 +461,7 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
           <button class="tab" data-cbteam="credit">Credit control</button>
           <button class="tab" data-cbteam="secondline">2nd line</button>
         </div>
+        <button class="tab" id="cbExportBtn" title="Download the individual calls behind these figures, for the selected period and team">⬇ Export CSV</button>
       </div>
       <div id="cbUnroutedNote" class="cb-note" style="display:none"></div>
       <div class="metrics-row" style="margin:12px 0 18px">
@@ -2346,6 +2347,76 @@ function renderCallbackReport() {
     CB_STATE.team = btn.dataset.cbteam;
     renderCallbackReport();
   };
+  document.getElementById('cbExportBtn').onclick = cbExportCsv;
+}
+
+// ---- CSV export: the individual calls behind the figures (read on click only, never cached: holds caller numbers) ----
+async function cbExportCsv() {
+  const btn = document.getElementById('cbExportBtn');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Preparing…';
+  try {
+    const rows = await readSheetLarge('callback_detail');
+    if (!rows.length) { alert('No call detail found. Check the callback_detail sheet has been built by FinaliseCallbacks.'); return; }
+
+    // Same period and team filters as the report
+    const thisMon = cbMonday(new Date()).getTime();
+    let wSet = null;
+    if (CB_STATE.period !== 'all') {
+      wSet = new Set();
+      for (let i = CB_STATE.period - 1; i >= 0; i--) wSet.add(cbAddWeeks(thisMon, -i));
+    }
+    const out = [];
+    rows.forEach(r => {
+      const d = cbParseDate(r['Date']); if (!d) return;
+      const mon = cbMonday(d).getTime();
+      if (wSet && !wSet.has(mon)) return;
+      const team = String(r['Team'] || '').trim();
+      const unrouted = !team || team === 'Unrouted';
+      if (unrouted) { if (CB_STATE.team !== 'all') return; }
+      else if (!isOpsTeam(team) || !teamInGroup(team, CB_STATE.team)) return;
+      const inTotals = String(r['Counted']).trim() === 'Yes' && !unrouted;
+      out.push({ d, r, team: team || 'Unrouted', inTotals,
+        why: unrouted ? 'Unrouted - not in team totals' : (inTotals ? '' : 'Still within 8 hrs - counted once the window closes') });
+    });
+    if (!out.length) { alert('No calls in this period for the selected team.'); return; }
+    out.sort((a, b) => (a.d - b.d) || String(a.r['Time (UK)']).localeCompare(String(b.r['Time (UK)'])));
+
+    const esc = v => { const s = String(v ?? ''); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const asText = v => { const s = String(v ?? '').trim(); return s ? '="' + s.replace(/"/g, '') + '"' : ''; }; // stops Excel turning IDs/numbers into 4.47E+11
+    const hdr = ['Call ID','Date','Time (UK)','Week','Team','Line (number_id)','Caller number','Type','Result',
+                 'Settled at (UK)','Working hrs to settle','Settled by','In dashboard totals','Note'];
+    const lines = [
+      esc('Contains caller phone numbers. For verification only. Do not forward. Delete when done.'),
+      hdr.join(',')
+    ];
+    out.forEach(x => {
+      const r = x.r;
+      lines.push([
+        asText(r['Call ID']), esc(r['Date']), esc(r['Time (UK)']), esc(r['Week']), esc(x.team),
+        asText(r['Line (number_id)']), asText(r['Caller number']), esc(r['Type']), esc(r['Result']),
+        esc(r['Settled at (UK)']), esc(r['Working hrs to settle']), esc(r['Settled by']),
+        x.inTotals ? 'Yes' : 'No', esc(x.why)
+      ].join(','));
+    });
+
+    const wks = [...new Set(out.map(x => cbIsoWeek(x.d)))];
+    const teamName = CB_STATE.team === 'all' ? 'all-ops-teams' : CB_STATE.team;
+    const today = new Date().toISOString().slice(0, 10);
+    const fname = `callback_report_${teamName}_wk${Math.min(...wks)}-wk${Math.max(...wks)}_${today}.csv`;
+
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (e) {
+    console.error('cbExportCsv error', e);
+    alert('Export failed - see the browser console for details.');
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
 }
 
 function cbRenderDetail() {
