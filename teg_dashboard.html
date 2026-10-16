@@ -1976,9 +1976,12 @@ function cbSettledByCard(weekKey) {
   src.forEach(r => {
     const d = cbParseDate(r['Date']); if (!d || cbWeekKey(d) !== weekKey) return;
     const k = TREND_TEAM_OF[String(r['Team'] || '').trim()]; if (!k) return;
-    const req = Number(r['Callback req']) || 0;
+    // Genuine missed calls only (columns I:J); falls back to all callback rows if the sheet predates them
+    const hasMissed = r['Missed calls'] !== undefined && r['Missed calls'] !== '';
+    const req = Number(hasMissed ? r['Missed calls'] : r['Callback req']) || 0;
+    const cb  = Number(hasMissed ? r['Missed called back'] : r['Called back']) || 0;
     if (!map[k]) map[k] = { req:0, cb:0 };
-    map[k].req += req; map[k].cb += Math.min(req, Number(r['Called back']) || 0);
+    map[k].req += req; map[k].cb += Math.min(req, cb);
   });
   _cbSettledCache = { src, wk:weekKey, map };
   return map;
