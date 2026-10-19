@@ -258,6 +258,10 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     <div class="topbar-left">
       <h1>TEG Ops Dashboard</h1>
       <span class="week-badge" id="weekBadge">Week —</span>
+      <div class="tabs" id="pageTabs" style="margin:0 0 0 12px">
+        <button class="tab active" data-page="main" onclick="showPage('main')">Main dashboard</button>
+        <button class="tab" data-page="teams" onclick="showPage('teams')">Team view</button>
+      </div>
     </div>
     <div class="topbar-right">
       <span id="lastUpdated">—</span>
@@ -266,7 +270,13 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     </div>
   </div>
 
-  <div class="dash">
+  <div class="dash" id="pageTeams" style="display:none">
+    <div class="section-wrap" style="margin-top:0"><div class="section-label">Team view</div><button class="info-btn" data-tip="Grouped team view. Support = Support + Revered + Support cover. Onboarding includes Onboarding stage 1 calls. Key Accounts and Smartbook are not shown." data-update="From agg_calls_hourly + call back data (UK time)">i</button></div>
+    <div id="tvFilterBar" style="display:flex;align-items:center;gap:16px;margin-bottom:10px;flex-wrap:wrap"></div>
+    <div id="tvGrid" class="team-grid"><div class="muted" style="font-size:11px">Team view coming soon.</div></div>
+  </div>
+
+  <div class="dash" id="pageMain">
     <!-- AI Weekly Brief -->
     <div id="aiBriefPanel" class="ai-brief" style="display:none">
       <div class="ai-brief-header">
@@ -2501,6 +2511,16 @@ function cbRenderDetail() {
 // ============================================================
 // BOOT
 // ============================================================
+// ============================================================
+// PAGE TABS (Main dashboard / Team view)
+// ============================================================
+function showPage(page) {
+  document.getElementById('pageMain').style.display  = page === 'main'  ? 'block' : 'none';
+  document.getElementById('pageTeams').style.display = page === 'teams' ? 'block' : 'none';
+  document.querySelectorAll('#pageTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
+  window.scrollTo(0, 0);
+}
+
 (async () => {
   const ok = await initAuth();
   if (ok) loadDashboard();
