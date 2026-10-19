@@ -244,6 +244,14 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
 .cb-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
 .cb-bar>span{display:block;height:6px;border-radius:3px}
 @media(max-width:1000px){.cb-split{grid-template-columns:1fr}}
+
+/* Team view: card layout + Mon–Fri table */
+.tv-card-body{display:flex;flex-wrap:wrap;gap:8px 24px}
+.tv-card-sum{flex:0 1 320px;min-width:240px}
+.tv-card-days{flex:1 1 300px;min-width:0;overflow-x:auto}
+.tv-days th,.tv-days td{padding:3px 5px;font-size:10px}
+.tv-days td.l{color:var(--muted)}
+.tv-days tr:last-child td{border-bottom:none}
 </style>
 </head>
 <body>
@@ -2584,26 +2592,48 @@ function tvWeekMonday(weekKey) {
   return new Date(jan4.getTime() - ((jan4.getUTCDay() + 6) % 7) * 86400000 + (w - 1) * 7 * 86400000);
 }
 
-// One grouped team card. Missed = never called back (as Team overview); Answered = Inbound - Missed
-function tvCardHtml(g, a, cbt) {
+// One grouped team card: weekly totals + Mon–Fri breakdown.
+// Missed = never called back (as Team overview); Answered = Inbound - Missed
+function tvCardHtml(g, a, cbt, seen, inProg, mon) {
+  const pctCol = p => p >= 70 ? '#15803d' : p >= 50 ? '#b45309' : '#dc2626';
   const live = Math.max(a.inbound - a.answered, 0);
   const missed = cbt ? Math.min(Math.max(cbt.req - cbt.cb, 0), a.inbound) : live;
   const answered = Math.max(a.inbound - missed, 0);
   const ansPct = a.inbound > 0 ? answered / a.inbound * 100 : 0;
   const connPct = a.outbound > 0 ? a.connOut / a.outbound * 100 : 0;
-  const ac = ansPct >= 70 ? '#15803d' : ansPct >= 50 ? '#b45309' : '#dc2626';
+  const ac = pctCol(ansPct);
+
+  // ---- Mon–Fri table (days with no data yet in the current week show '–') ----
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
+  const na = i => inProg && !seen[i];
+  const dMiss = i => cbt ? Math.min(Math.max(cbt.dReq[i] - cbt.dCb[i], 0), a.dIn[i]) : Math.max(a.dIn[i] - a.dAns[i], 0);
+  const cell = (i, html, style) => na(i) ? '<td class="muted">–</td>' : `<td${style ? ` style="${style}"` : ''}>${html}</td>`;
+  const row = (label, fn) => `<tr><td class="l">${label}</td>${[0,1,2,3,4].map(fn).join('')}</tr>`;
+  const head = '<tr><th class="l"></th>' + DAYS.map((d, i) => `<th>${d} ${new Date(mon.getTime() + i * 86400000).getUTCDate()}</th>`).join('') + '</tr>';
+  const days = '<table class="tv-days">' + head +
+    row('Inbound',  i => cell(i, a.dIn[i])) +
+    row('Answered', i => cell(i, Math.max(a.dIn[i] - dMiss(i), 0))) +
+    row('Ans %',    i => { const p = a.dIn[i] ? (a.dIn[i] - dMiss(i)) / a.dIn[i] * 100 : null;
+                           return cell(i, p === null ? '—' : Math.round(p) + '%', p === null ? '' : `color:${pctCol(p)};font-weight:600`); }) +
+    row('Missed',   i => cell(i, dMiss(i), 'color:#dc2626')) +
+    row('Outbound', i => cell(i, a.dOut[i])) +
+    '</table>';
+  const weIn = a.dIn[5] + a.dIn[6], weOut = a.dOut[5] + a.dOut[6];
+  const we = (weIn || weOut) ? `<div style="font-size:10px;color:var(--subtle);margin-top:4px">Sat–Sun: ${weIn} inbound, ${weOut} outbound (in the weekly totals, not shown by day)</div>` : '';
+
   return `<div class="team-card" data-tvgroup="${g.key}">` +
     `<div class="tc-name" style="color:${g.color};font-size:12px;margin-bottom:1px">${g.label}</div>` +
     `<div style="font-size:10px;color:var(--subtle);margin-bottom:8px;min-height:15px">${g.note}</div>` +
-    `<div class="tc-row"><span>Inbound</span><span class="tc-val">${a.inbound}</span></div>` +
-    `<div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${answered} (${ansPct.toFixed(1)}%)</span></div>` +
-    `<div class="tc-bar"><div class="tc-fill" style="width:${Math.round(ansPct)}%;background:${ac}"></div></div>` +
-    `<div class="tc-row"><span>Outbound</span><span class="tc-val">${a.outbound}</span></div>` +
-    `<div class="tc-row"><span>Connected</span><span class="tc-val">${a.connOut} (${connPct.toFixed(1)}%)</span></div>` +
-    `<div class="tc-bar"><div class="tc-fill" style="width:${Math.round(connPct)}%;background:#1d4ed8"></div></div>` +
-    `<div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${missed}</span></div>` +
-    (cbt ? `<div class="tc-row"><span class="muted">${live} missed live, ${missed} not called back</span></div>` : '') +
-    `</div>`;
+    `<div class="tv-card-body"><div class="tv-card-sum">` +
+      `<div class="tc-row"><span>Inbound</span><span class="tc-val">${a.inbound}</span></div>` +
+      `<div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${answered} (${ansPct.toFixed(1)}%)</span></div>` +
+      `<div class="tc-bar"><div class="tc-fill" style="width:${Math.round(ansPct)}%;background:${ac}"></div></div>` +
+      `<div class="tc-row"><span>Outbound</span><span class="tc-val">${a.outbound}</span></div>` +
+      `<div class="tc-row"><span>Connected</span><span class="tc-val">${a.connOut} (${connPct.toFixed(1)}%)</span></div>` +
+      `<div class="tc-bar"><div class="tc-fill" style="width:${Math.round(connPct)}%;background:#1d4ed8"></div></div>` +
+      `<div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${missed}</span></div>` +
+      (cbt ? `<div class="tc-row"><span class="muted">${live} missed live, ${missed} not called back</span></div>` : '') +
+    `</div><div class="tv-card-days">${days}${we}</div></div></div>`;
 }
 
 // Build the filter bar once per data load, then draw the cards
@@ -2634,13 +2664,15 @@ function renderTeamView() {
 
 function tvRender() {
   const wk = TV_STATE.week;
-  const { acc } = tvBuild(wk);
+    const { acc, seen } = tvBuild(wk);
   const cbs = tvCallbacks(wk);
     document.querySelectorAll('#tvTeamTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tvteam === TV_STATE.team));
   const groups = TV_GROUPS.filter(g => TV_STATE.team === 'all' || g.key === TV_STATE.team);
   const grid = document.getElementById('tvGrid');
-  grid.style.gridTemplateColumns = 'repeat(auto-fit,minmax(260px,1fr))';
-  grid.innerHTML = groups.map(g => tvCardHtml(g, acc[g.key], cbs[g.key])).join('');
+   const inProg = wk >= currentWeekKeyUK();
+  const mon0 = tvWeekMonday(wk);
+  grid.style.gridTemplateColumns = TV_STATE.team === 'all' ? 'repeat(auto-fill,minmax(300px,1fr))' : '1fr';
+  grid.innerHTML = groups.map(g => tvCardHtml(g, acc[g.key], cbs[g.key], seen, inProg, mon0)).join('');
   const mon = tvWeekMonday(wk), sun = new Date(mon.getTime() + 6 * 86400000);
   const f = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short', timeZone:'UTC' });
   const note = document.getElementById('tvWeekNote');
