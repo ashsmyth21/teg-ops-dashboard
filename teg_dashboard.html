@@ -1532,6 +1532,7 @@ function renderDashboard() {
   renderAgents(currentAgentTeam);
   renderTrendChart();
   document.getElementById('aiBriefPanel').style.display='block';
+  renderTeamView();
   updateKeyDot();
 
   renderCallbackReport();
@@ -2530,6 +2531,107 @@ const TV_GROUP_OF = {
   onboarding:'onboarding', risk:'risk', credit:'credit', secondline:'secondline',
 };
 const TV_STATE = { week:null, team:'all' };
+
+// Sum agg_calls_hourly rows for one week into the Team view groups (totals + per day, 0 = Mon)
+function tvBuild(weekKey) {
+  const z = () => [0,0,0,0,0,0,0];
+  const acc = {};
+  TV_GROUPS.forEach(g => acc[g.key] = { inbound:0, answered:0, outbound:0, connOut:0, dIn:z(), dAns:z(), dOut:z() });
+  const seen = z();
+  aggRowsForWeek(weekKey).forEach(r => {
+    const dir = String(r['direction'] || '').trim(), team = String(r['team'] || '').trim();
+    const wdn = Number(r['weekday']); const wd = (wdn >= 1 && wdn <= 7) ? wdn - 1 : -1;
+    if (wd >= 0) seen[wd] = 1;
+    let g = null;
+    if (dir === 'inbound') g = TV_GROUP_OF[TREND_TEAM_OF[team]];
+    else if (dir === 'outbound') g = TV_GROUP_OF[aggOutCardKey(team)];
+    // cover_answered rows are skipped on purpose: those calls are already in Support/Revered inbound
+    if (!g || !acc[g]) return;
+    const a = acc[g];
+    if (dir === 'inbound') {
+      const off = aggOffered(r), ans = Number(r['answered']) || 0;
+      a.inbound += off; a.answered += ans;
+      if (wd >= 0) { a.dIn[wd] += off; a.dAns[wd] += ans; }
+    } else {
+      const c = Number(r['calls']) || 0;
+      a.outbound += c; a.connOut += Number(r['connected_10s']) || 0;
+      if (wd >= 0) a.dOut[wd] += c;
+    }
+  });
+  return { acc, seen };
+}
+
+// Callback report figures per Team view group for one week (totals + per day), same source as the Team overview cards
+function tvCallbacks(weekKey) {
+  const map = {};
+  (globalData.cbRows || []).forEach(r => {
+    const d = cbParseDate(r['Date']); if (!d || cbWeekKey(d) !== weekKey) return;
+    const g = TV_GROUP_OF[TREND_TEAM_OF[String(r['Team'] || '').trim()]]; if (!g) return;
+    const hasMissed = r['Missed calls'] !== undefined && r['Missed calls'] !== '';
+    const req = Number(hasMissed ? r['Missed calls'] : r['Callback req']) || 0;
+    const cb  = Math.min(req, Number(hasMissed ? r['Missed called back'] : r['Called back']) || 0);
+    const wd = (d.getDay() + 6) % 7;
+    if (!map[g]) map[g] = { req:0, cb:0, dReq:[0,0,0,0,0,0,0], dCb:[0,0,0,0,0,0,0] };
+    map[g].req += req; map[g].cb += cb; map[g].dReq[wd] += req; map[g].dCb[wd] += cb;
+  });
+  return map;
+}
+
+// Monday (UTC) of an ISO week key like '2026-W43'
+function tvWeekMonday(weekKey) {
+  const y = Number(weekKey.slice(0, 4)), w = Number(weekKey.slice(6));
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  return new Date(jan4.getTime() - ((jan4.getUTCDay() + 6) % 7) * 86400000 + (w - 1) * 7 * 86400000);
+}
+
+// One grouped team card. Missed = never called back (as Team overview); Answered = Inbound - Missed
+function tvCardHtml(g, a, cbt) {
+  const live = Math.max(a.inbound - a.answered, 0);
+  const missed = cbt ? Math.min(Math.max(cbt.req - cbt.cb, 0), a.inbound) : live;
+  const answered = Math.max(a.inbound - missed, 0);
+  const ansPct = a.inbound > 0 ? answered / a.inbound * 100 : 0;
+  const connPct = a.outbound > 0 ? a.connOut / a.outbound * 100 : 0;
+  const ac = ansPct >= 70 ? '#15803d' : ansPct >= 50 ? '#b45309' : '#dc2626';
+  return `<div class="team-card" data-tvgroup="${g.key}">` +
+    `<div class="tc-name" style="color:${g.color};font-size:12px;margin-bottom:1px">${g.label}</div>` +
+    `<div style="font-size:10px;color:var(--subtle);margin-bottom:8px;min-height:15px">${g.note}</div>` +
+    `<div class="tc-row"><span>Inbound</span><span class="tc-val">${a.inbound}</span></div>` +
+    `<div class="tc-row"><span>Answered</span><span class="tc-val" style="color:${ac}">${answered} (${ansPct.toFixed(1)}%)</span></div>` +
+    `<div class="tc-bar"><div class="tc-fill" style="width:${Math.round(ansPct)}%;background:${ac}"></div></div>` +
+    `<div class="tc-row"><span>Outbound</span><span class="tc-val">${a.outbound}</span></div>` +
+    `<div class="tc-row"><span>Connected</span><span class="tc-val">${a.connOut} (${connPct.toFixed(1)}%)</span></div>` +
+    `<div class="tc-bar"><div class="tc-fill" style="width:${Math.round(connPct)}%;background:#1d4ed8"></div></div>` +
+    `<div class="tc-row"><span>Missed</span><span class="tc-val" style="color:#dc2626">${missed}</span></div>` +
+    (cbt ? `<div class="tc-row"><span class="muted">${live} missed live, ${missed} not called back</span></div>` : '') +
+    `</div>`;
+}
+
+// Build the filter bar once per data load, then draw the cards
+function renderTeamView() {
+  const bar = document.getElementById('tvFilterBar'), grid = document.getElementById('tvGrid');
+  if (!bar || !grid) return;
+  if (!aggOn()) { grid.innerHTML = '<div class="muted" style="font-size:11px">Team view needs the agg_calls_hourly summary sheet, which did not load.</div>'; return; }
+  bar.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span><div class="tabs" id="tvWeekTabs" style="margin-bottom:0"></div></div>' +
+    '<span id="tvWeekNote" style="font-size:11px;color:var(--muted)"></span>';
+  if (!TV_STATE.week || !aggKeysAll().includes(TV_STATE.week)) TV_STATE.week = aggResolveWeek('latest');
+  aggWeekSelect('tvWeekTabs', wk => { TV_STATE.week = wk; tvRender(); }, TV_STATE.week);
+  tvRender();
+}
+
+function tvRender() {
+  const wk = TV_STATE.week;
+  const { acc } = tvBuild(wk);
+  const cbs = tvCallbacks(wk);
+  const groups = TV_GROUPS.filter(g => TV_STATE.team === 'all' || g.key === TV_STATE.team);
+  const grid = document.getElementById('tvGrid');
+  grid.style.gridTemplateColumns = 'repeat(auto-fit,minmax(260px,1fr))';
+  grid.innerHTML = groups.map(g => tvCardHtml(g, acc[g.key], cbs[g.key])).join('');
+  const mon = tvWeekMonday(wk), sun = new Date(mon.getTime() + 6 * 86400000);
+  const f = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short', timeZone:'UTC' });
+  const note = document.getElementById('tvWeekNote');
+  if (note) note.textContent = f(mon) + ' – ' + f(sun) + ' ' + sun.getUTCFullYear() + (wk >= currentWeekKeyUK() ? ' · week in progress' : '');
+}
 
 // ============================================================
 // PAGE TABS (Main dashboard / Team view)
