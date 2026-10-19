@@ -2613,9 +2613,22 @@ function renderTeamView() {
   if (!aggOn()) { grid.innerHTML = '<div class="muted" style="font-size:11px">Team view needs the agg_calls_hourly summary sheet, which did not load.</div>'; return; }
   bar.innerHTML =
     '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span><div class="tabs" id="tvWeekTabs" style="margin-bottom:0"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Team</span><div class="tabs" id="tvTeamTabs" style="margin-bottom:0">' +
+      '<button class="tab" data-tvteam="all">All teams</button>' +
+      '<button class="tab" data-tvteam="support">Support</button>' +
+      '<button class="tab" data-tvteam="onboarding">Onboarding</button>' +
+      '<button class="tab" data-tvteam="risk">Risk</button>' +
+      '<button class="tab" data-tvteam="credit">Credit control</button>' +
+      '<button class="tab" data-tvteam="secondline">2nd line</button>' +
+    '</div></div>' +
     '<span id="tvWeekNote" style="font-size:11px;color:var(--muted)"></span>';
   if (!TV_STATE.week || !aggKeysAll().includes(TV_STATE.week)) TV_STATE.week = aggResolveWeek('latest');
-  aggWeekSelect('tvWeekTabs', wk => { TV_STATE.week = wk; tvRender(); }, TV_STATE.week);
+    aggWeekSelect('tvWeekTabs', wk => { TV_STATE.week = wk; tvRender(); }, TV_STATE.week);
+  document.getElementById('tvTeamTabs').onclick = e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    TV_STATE.team = btn.dataset.tvteam;
+    tvRender();
+  };
   tvRender();
 }
 
@@ -2623,6 +2636,7 @@ function tvRender() {
   const wk = TV_STATE.week;
   const { acc } = tvBuild(wk);
   const cbs = tvCallbacks(wk);
+    document.querySelectorAll('#tvTeamTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tvteam === TV_STATE.team));
   const groups = TV_GROUPS.filter(g => TV_STATE.team === 'all' || g.key === TV_STATE.team);
   const grid = document.getElementById('tvGrid');
   grid.style.gridTemplateColumns = 'repeat(auto-fit,minmax(260px,1fr))';
