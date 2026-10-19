@@ -2512,6 +2512,26 @@ function cbRenderDetail() {
 // BOOT
 // ============================================================
 // ============================================================
+// TEAM VIEW: grouping map
+// Support = Support + Revered inbound, plus Support cover outbound.
+// (Cover calls answered are already inside Support/Revered inbound, so only cover outbound is added.)
+// Onboarding includes Onboarding stage 1 calls. Key Accounts and Smartbook are not shown.
+// ============================================================
+const TV_GROUPS = [
+  { key:'support',    label:'Support',             color:'#1d4ed8', note:'Support + Revered + Support cover' },
+  { key:'onboarding', label:'Onboarding',          color:'#15803d', note:'Includes Onboarding stage 1 calls' },
+  { key:'risk',       label:'Risk and compliance', color:'#b45309', note:'' },
+  { key:'credit',     label:'Credit control',      color:'#7c3aed', note:'' },
+  { key:'secondline', label:'2nd line',            color:'#c2410c', note:'' },
+];
+// Existing team-card key (from TREND_TEAM_OF / aggOutCardKey) -> Team view group
+const TV_GROUP_OF = {
+  support:'support', revered:'support', cover:'support',
+  onboarding:'onboarding', risk:'risk', credit:'credit', secondline:'secondline',
+};
+const TV_STATE = { week:null, team:'all' };
+
+// ============================================================
 // PAGE TABS (Main dashboard / Team view)
 // ============================================================
 function showPage(page) {
