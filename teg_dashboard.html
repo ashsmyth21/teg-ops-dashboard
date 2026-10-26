@@ -1558,7 +1558,8 @@ function renderDashboard() {
   renderAgents(currentAgentTeam);
   renderTrendChart();
   document.getElementById('aiBriefPanel').style.display='block';
-  renderTeamView();
+    renderTeamView();
+  if (ZV_STATE.init) zvLoad();
   updateKeyDot();
 
   renderCallbackReport();
@@ -2700,24 +2701,139 @@ function tvRender() {
 // ============================================================
 // ============================================================
 // ZENDESK VIEWS TAB
+// Reads zd_view_counts (written by the ZD View Counts Daily flow) and cfg_zd_views (card order).
+// Change vs previous snapshot is matched by view_id, so renamed views still compare.
 // ============================================================
 const ZV_TEAMS = ['Support', 'Risk', 'Credit Control', 'Onboarding', '2nd line/QA tickets'];
-const ZV_STATE = { team: 'Support', init: false, sample: true };
+const ZV_STATE = { team: 'Support', init: false, loading: false, date: '' };
+let ZV_ROWS = [];
 
-// SAMPLE DATA: replaced by zd_view_counts in Step 4
-let ZV_ROWS = [
-  { date: '26/10/2026', team: 'Support',             view_name: 'Unassigned',          count: 42, sort: 1 },
-  { date: '26/10/2026', team: 'Support',             view_name: 'Open - awaiting us',  count: 67, sort: 2 },
-  { date: '26/10/2026', team: 'Support',             view_name: 'Pending > 3 days',    count: 17, sort: 3 },
-  { date: '26/10/2026', team: 'Risk',                view_name: 'New risk reviews',    count: 11, sort: 1 },
-  { date: '26/10/2026', team: 'Risk',                view_name: 'Awaiting documents',  count: 23, sort: 2 },
-  { date: '26/10/2026', team: 'Credit Control',      view_name: 'Payment complaints',  count: 9,  sort: 1 },
-  { date: '26/10/2026', team: 'Credit Control',      view_name: 'PCL increase requests', count: 5, sort: 2 },
-  { date: '26/10/2026', team: 'Onboarding',          view_name: 'Stage 1',             count: 31, sort: 1 },
-  { date: '26/10/2026', team: 'Onboarding',          view_name: 'Stage 2',             count: 14, sort: 2 },
-  { date: '26/10/2026', team: '2nd line/QA tickets', view_name: 'Escalations',         count: 19, sort: 1 },
-  { date: '26/10/2026', team: '2nd line/QA tickets', view_name: 'QA review',           count: 8,  sort: 2 }
-];
+// Date helpers (dates stored as DD/MM/YYYY text)
+function zvKey(d) {
+  const p = String(d || '').split('/');
+  return p.length === 3 ? Number(p[2] + p[1].padStart(2, '0') + p[0].padStart(2, '0')) : 0;
+}
+function zvDay(ds) {
+  const p = String(ds || '').split('/');
+  if (p.length !== 3) return '';
+  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(+p[2], +p[1] - 1, +p[0]).getDay()];
+}
+// Safety net: if Excel ever stores the date as a serial number, turn it back into DD/MM/YYYY
+function zvNormDate(v) {
+  if (typeof v === 'number' && v > 40000) {
+    const d = new Date(Math.round((v - 25569) * 86400000));
+    return String(d.getUTCDate()).padStart(2, '0') + '/' + String(d.getUTCMonth() + 1).padStart(2, '0') + '/' + d.getUTCFullYear();
+  }
+  return String(v ?? '').trim();
+}
+function zvEsc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+async function zvLoad() {
+  if (ZV_STATE.loading) return;
+  ZV_STATE.loading = true;
+  document.getElementById('zvGrid').innerHTML = '<div class="zv-note">Loading Zendesk view counts…</div>';
+  try {
+    const [counts, cfg] = await Promise.all([readSheet('zd_view_counts'), readSheet('cfg_zd_views')]);
+    const sortOf = {};
+    cfg.forEach(r => { const id = String(r['view_id'] ?? '').trim(); if (id) sortOf[id] = Number(r['sort_order']) || 99; });
+    ZV_ROWS = counts.map(r => {
+      const raw = r['ticket_count'];
+      const id = String(r['view_id'] ?? '').trim();
+      return {
+        date: zvNormDate(r['snapshot_date']),
+        team: String(r['team'] || '').trim(),
+        view_id: id,
+        view_name: String(r['view_name'] || '').trim() || id,
+        count: (raw === '' || raw === null || raw === undefined) ? null : Number(raw),
+        fresh: String(r['fresh']).toUpperCase() === 'TRUE',
+        sort: sortOf[id] ?? 99,
+      };
+    }).filter(r => r.date && r.view_id);
+    // Open on the first team that has data if the current one has none
+    if (!ZV_ROWS.some(r => r.team === ZV_STATE.team)) {
+      const t = ZV_TEAMS.find(t => ZV_ROWS.some(r => r.team === t));
+      if (t) ZV_STATE.team = t;
+    }
+  } catch (e) {
+    console.error('zvLoad error', e);
+    ZV_ROWS = [];
+  }
+  ZV_STATE.loading = false;
+  zvFillDates();
+  zvRender();
+}
+
+function zvInit() {
+  if (ZV_STATE.init) return;
+  ZV_STATE.init = true;
+  document.getElementById('zvFilterBar').innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px"><span class="zv-label">Team</span>' +
+    '<div class="tabs" id="zvTeamTabs" style="margin-bottom:0">' +
+      ZV_TEAMS.map(t => '<button class="tab" data-zvteam="' + zvEsc(t) + '">' + zvEsc(t) + '</button>').join('') +
+    '</div></div>' +
+    '<div style="display:flex;align-items:center;gap:8px"><span class="zv-label">Date</span>' +
+    '<select id="zvDateSel" style="font-size:12px;padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff"></select></div>' +
+    '<span class="zv-note" id="zvSnapNote"></span>';
+  document.getElementById('zvTeamTabs').onclick = e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    ZV_STATE.team = btn.dataset.zvteam;
+    zvRender();
+  };
+  zvLoad();
+}
+
+function zvFillDates() {
+  const sel = document.getElementById('zvDateSel'); if (!sel) return;
+  const dates = [...new Set(ZV_ROWS.map(r => r.date))].sort((a, b) => zvKey(b) - zvKey(a));
+  if (!dates.length) { sel.innerHTML = '<option>No snapshots yet</option>'; ZV_STATE.date = ''; return; }
+  if (!ZV_STATE.date || !dates.includes(ZV_STATE.date)) ZV_STATE.date = dates[0];
+  sel.innerHTML = dates.map(d =>
+    '<option value="' + zvEsc(d) + '"' + (d === ZV_STATE.date ? ' selected' : '') + '>' +
+    zvDay(d) + ' ' + zvEsc(d) + (d === dates[0] ? ' (latest)' : '') + '</option>'
+  ).join('');
+  sel.onchange = () => { ZV_STATE.date = sel.value; zvRender(); };
+}
+
+function zvRender() {
+  if (ZV_STATE.loading) return;
+  document.querySelectorAll('#zvTeamTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.zvteam === ZV_STATE.team));
+  const teamRows = ZV_ROWS.filter(r => r.team === ZV_STATE.team);
+  const rows = teamRows.filter(r => r.date === ZV_STATE.date).sort((a, b) => a.sort - b.sort);
+
+  // Previous snapshot = most recent date before the selected one (for this team)
+  const prevDate = [...new Set(teamRows.map(r => r.date))]
+    .filter(d => zvKey(d) < zvKey(ZV_STATE.date))
+    .sort((a, b) => zvKey(b) - zvKey(a))[0] || '';
+  const prev = {};
+  teamRows.filter(r => r.date === prevDate).forEach(r => { prev[r.view_id] = r.count; });
+
+  document.getElementById('zvSnapNote').textContent = !teamRows.length ? '' :
+    (prevDate ? 'Compared with ' + zvDay(prevDate) + ' ' + prevDate : 'No earlier snapshot');
+
+  const grid = document.getElementById('zvGrid');
+  if (!teamRows.length) { grid.innerHTML = '<div class="zv-note">No views set up for this team yet. Add them to cfg_zd_views.</div>'; return; }
+  if (!rows.length)     { grid.innerHTML = '<div class="zv-note">No snapshot for this team on this date.</div>'; return; }
+
+  grid.innerHTML = rows.map(r => {
+    let chg;
+    const p = prev[r.view_id];
+    if (r.count === null) {
+      chg = '<div class="zv-chg zv-flat">Zendesk didn’t return a count</div>';
+    } else if (p === undefined || p === null) {
+      chg = '<div class="zv-chg zv-flat">No previous snapshot</div>';
+    } else {
+      const diff = r.count - p;
+      const cls = diff > 0 ? 'zv-up' : diff < 0 ? 'zv-down' : 'zv-flat';
+      const arrow = diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '– ';
+      chg = '<div class="zv-chg ' + cls + '">' + arrow + Math.abs(diff) + ' vs ' + zvDay(prevDate) + '</div>';
+    }
+    const stale = (!r.fresh && r.count !== null) ? '<div class="zv-note" style="font-size:10px;margin-top:2px">Count may be slightly out of date</div>' : '';
+    return '<div class="zv-card" title="View ID ' + zvEsc(r.view_id) + '"><div class="zv-name">' + zvEsc(r.view_name) + '</div>' +
+           '<div class="zv-count">' + (r.count === null ? '—' : r.count.toLocaleString('en-GB')) + '</div>' + chg + stale + '</div>';
+  }).join('');
+}
 
 // Date helpers (dates stored as DD/MM/YYYY text)
 function zvKey(d) {
