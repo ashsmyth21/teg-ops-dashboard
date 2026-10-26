@@ -288,7 +288,16 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
    <div class="dash" id="pageViews" style="display:none">
     <div class="section-wrap" style="margin-top:0"><div class="section-label">Zendesk views</div><button class="info-btn" data-tip="Ticket count per Zendesk view, taken each weekday morning. Change is against the previous snapshot." data-update="From zd_view_counts (daily, 07:30)">i</button></div>
     <div id="zvFilterBar" style="display:flex;align-items:center;gap:16px;margin-bottom:10px;flex-wrap:wrap"></div>
-    <div id="zvGrid" class="team-grid"><div class="muted" style="font-size:11px">Zendesk views coming soon.</div></div>
+        <style>
+      .zv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+      .zv-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px}
+      .zv-name{font-size:12px;color:#6b7280;margin-bottom:6px}
+      .zv-count{font-size:28px;font-weight:600;color:#111827;line-height:1.1}
+      .zv-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+      .zv-note{font-size:11px;color:var(--muted)}
+      .zv-sample{font-size:10px;font-weight:600;color:#b45309;background:#fef3c7;border-radius:4px;padding:2px 6px;margin-left:6px}
+    </style>
+    <div id="zvGrid" class="zv-grid"></div>
   </div>
 
   <div class="dash" id="pageMain">
@@ -2687,12 +2696,71 @@ function tvRender() {
 }
 
 // ============================================================
+// ============================================================
+// ZENDESK VIEWS TAB
+// ============================================================
+const ZV_TEAMS = ['Support', 'Risk', 'Credit Control', 'Onboarding', '2nd line/QA tickets'];
+const ZV_STATE = { team: 'Support', init: false, sample: true };
+
+// SAMPLE DATA: replaced by zd_view_counts in Step 4
+let ZV_ROWS = [
+  { date: '26/10/2026', team: 'Support',             view_name: 'Unassigned',          count: 42, sort: 1 },
+  { date: '26/10/2026', team: 'Support',             view_name: 'Open - awaiting us',  count: 67, sort: 2 },
+  { date: '26/10/2026', team: 'Support',             view_name: 'Pending > 3 days',    count: 17, sort: 3 },
+  { date: '26/10/2026', team: 'Risk',                view_name: 'New risk reviews',    count: 11, sort: 1 },
+  { date: '26/10/2026', team: 'Risk',                view_name: 'Awaiting documents',  count: 23, sort: 2 },
+  { date: '26/10/2026', team: 'Credit Control',      view_name: 'Payment complaints',  count: 9,  sort: 1 },
+  { date: '26/10/2026', team: 'Credit Control',      view_name: 'PCL increase requests', count: 5, sort: 2 },
+  { date: '26/10/2026', team: 'Onboarding',          view_name: 'Stage 1',             count: 31, sort: 1 },
+  { date: '26/10/2026', team: 'Onboarding',          view_name: 'Stage 2',             count: 14, sort: 2 },
+  { date: '26/10/2026', team: '2nd line/QA tickets', view_name: 'Escalations',         count: 19, sort: 1 },
+  { date: '26/10/2026', team: '2nd line/QA tickets', view_name: 'QA review',           count: 8,  sort: 2 }
+];
+
+function zvEsc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+function zvInit() {
+  if (ZV_STATE.init) return;
+  ZV_STATE.init = true;
+  document.getElementById('zvFilterBar').innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px"><span class="zv-label">Team</span>' +
+    '<div class="tabs" id="zvTeamTabs" style="margin-bottom:0">' +
+      ZV_TEAMS.map(t => '<button class="tab" data-zvteam="' + zvEsc(t) + '">' + zvEsc(t) + '</button>').join('') +
+    '</div></div>' +
+    '<span class="zv-note" id="zvSnapNote"></span>';
+  document.getElementById('zvTeamTabs').onclick = e => {
+    const btn = e.target.closest('.tab'); if (!btn) return;
+    ZV_STATE.team = btn.dataset.zvteam;
+    zvRender();
+  };
+  zvRender();
+}
+
+function zvRender() {
+  document.querySelectorAll('#zvTeamTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.zvteam === ZV_STATE.team));
+  const rows = ZV_ROWS.filter(r => r.team === ZV_STATE.team).sort((a, b) => (a.sort || 99) - (b.sort || 99));
+  const snapDate = rows.length ? rows[0].date : '';
+  document.getElementById('zvSnapNote').innerHTML =
+    (snapDate ? 'Snapshot: ' + zvEsc(snapDate) : '') +
+    (ZV_STATE.sample ? '<span class="zv-sample">Sample data</span>' : '');
+  document.getElementById('zvGrid').innerHTML = rows.length
+    ? rows.map(r =>
+        '<div class="zv-card"><div class="zv-name">' + zvEsc(r.view_name) + '</div>' +
+        '<div class="zv-count">' + Number(r.count).toLocaleString('en-GB') + '</div></div>'
+      ).join('')
+    : '<div class="zv-note">No views set up for this team yet.</div>';
+}
+
+// ============================================================
 // PAGE TABS (Main dashboard / Team view)
 // ============================================================
 function showPage(page) {
   document.getElementById('pageMain').style.display  = page === 'main'  ? 'block' : 'none';
     document.getElementById('pageTeams').style.display = page === 'teams' ? 'block' : 'none';
-  document.getElementById('pageViews').style.display = page === 'views' ? 'block' : 'none';
+    document.getElementById('pageViews').style.display = page === 'views' ? 'block' : 'none';
+  if (page === 'views') zvInit();
   document.querySelectorAll('#pageTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
   window.scrollTo(0, 0);
 }
