@@ -295,7 +295,9 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
       .zv-count{font-size:28px;font-weight:600;color:#111827;line-height:1.1}
       .zv-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
       .zv-note{font-size:11px;color:var(--muted)}
-      .zv-sample{font-size:10px;font-weight:600;color:#b45309;background:#fef3c7;border-radius:4px;padding:2px 6px;margin-left:6px}
+            .zv-sample{font-size:10px;font-weight:600;color:#b45309;background:#fef3c7;border-radius:4px;padding:2px 6px;margin-left:6px}
+      .zv-chg{font-size:11px;font-weight:600;margin-top:6px}
+      .zv-up{color:#b91c1c}.zv-down{color:#15803d}.zv-flat{color:#6b7280}
     </style>
     <div id="zvGrid" class="zv-grid"></div>
   </div>
@@ -2717,6 +2719,31 @@ let ZV_ROWS = [
   { date: '26/10/2026', team: '2nd line/QA tickets', view_name: 'QA review',           count: 8,  sort: 2 }
 ];
 
+// Date helpers (dates stored as DD/MM/YYYY text)
+function zvKey(d) {
+  const p = String(d || '').split('/');
+  return p.length === 3 ? Number(p[2] + p[1].padStart(2, '0') + p[0].padStart(2, '0')) : 0;
+}
+function zvFmt(d) {
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+}
+function zvDay(ds) {
+  const p = String(ds || '').split('/');
+  if (p.length !== 3) return '';
+  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(+p[2], +p[1] - 1, +p[0]).getDay()];
+}
+
+// SAMPLE DATA: adds 4 earlier weekdays so the date picker and change can be tested
+(function zvAddSampleHistory() {
+  const base = ZV_ROWS.slice();
+  const d = new Date(2026, 9, 26);
+  for (let i = 1; i <= 4; i++) {
+    do { d.setDate(d.getDate() - 1); } while (d.getDay() === 0 || d.getDay() === 6);
+    const ds = zvFmt(d);
+    base.forEach((r, j) => ZV_ROWS.push({ ...r, date: ds, count: Math.max(0, r.count + ((i * 7 + j * 3) % 11) - 5) }));
+  }
+})();
+
 function zvEsc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
@@ -2729,28 +2756,61 @@ function zvInit() {
     '<div class="tabs" id="zvTeamTabs" style="margin-bottom:0">' +
       ZV_TEAMS.map(t => '<button class="tab" data-zvteam="' + zvEsc(t) + '">' + zvEsc(t) + '</button>').join('') +
     '</div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px"><span class="zv-label">Date</span>' +
+    '<select id="zvDateSel" style="font-size:12px;padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff"></select></div>' +
     '<span class="zv-note" id="zvSnapNote"></span>';
   document.getElementById('zvTeamTabs').onclick = e => {
     const btn = e.target.closest('.tab'); if (!btn) return;
     ZV_STATE.team = btn.dataset.zvteam;
     zvRender();
   };
+  zvFillDates();
   zvRender();
+}
+
+function zvFillDates() {
+  const dates = [...new Set(ZV_ROWS.map(r => r.date))].sort((a, b) => zvKey(b) - zvKey(a));
+  if (!ZV_STATE.date || !dates.includes(ZV_STATE.date)) ZV_STATE.date = dates[0] || '';
+  const sel = document.getElementById('zvDateSel');
+  sel.innerHTML = dates.map(d =>
+    '<option value="' + zvEsc(d) + '"' + (d === ZV_STATE.date ? ' selected' : '') + '>' +
+    zvDay(d) + ' ' + zvEsc(d) + (d === dates[0] ? ' (latest)' : '') + '</option>'
+  ).join('');
+  sel.onchange = () => { ZV_STATE.date = sel.value; zvRender(); };
 }
 
 function zvRender() {
   document.querySelectorAll('#zvTeamTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.zvteam === ZV_STATE.team));
-  const rows = ZV_ROWS.filter(r => r.team === ZV_STATE.team).sort((a, b) => (a.sort || 99) - (b.sort || 99));
-  const snapDate = rows.length ? rows[0].date : '';
+  const teamRows = ZV_ROWS.filter(r => r.team === ZV_STATE.team);
+  const rows = teamRows.filter(r => r.date === ZV_STATE.date).sort((a, b) => (a.sort || 99) - (b.sort || 99));
+
+  // Previous snapshot = most recent date before the selected one
+  const prevDate = [...new Set(teamRows.map(r => r.date))]
+    .filter(d => zvKey(d) < zvKey(ZV_STATE.date))
+    .sort((a, b) => zvKey(b) - zvKey(a))[0] || '';
+  const prev = {};
+  teamRows.filter(r => r.date === prevDate).forEach(r => { prev[r.view_name] = Number(r.count); });
+
   document.getElementById('zvSnapNote').innerHTML =
-    (snapDate ? 'Snapshot: ' + zvEsc(snapDate) : '') +
+    (prevDate ? 'Compared with ' + zvDay(prevDate) + ' ' + zvEsc(prevDate) : 'No earlier snapshot') +
     (ZV_STATE.sample ? '<span class="zv-sample">Sample data</span>' : '');
+
   document.getElementById('zvGrid').innerHTML = rows.length
-    ? rows.map(r =>
-        '<div class="zv-card"><div class="zv-name">' + zvEsc(r.view_name) + '</div>' +
-        '<div class="zv-count">' + Number(r.count).toLocaleString('en-GB') + '</div></div>'
-      ).join('')
-    : '<div class="zv-note">No views set up for this team yet.</div>';
+    ? rows.map(r => {
+        const now = Number(r.count);
+        let chg;
+        if (prev[r.view_name] === undefined) {
+          chg = '<div class="zv-chg zv-flat">No previous snapshot</div>';
+        } else {
+          const diff = now - prev[r.view_name];
+          const cls = diff > 0 ? 'zv-up' : diff < 0 ? 'zv-down' : 'zv-flat';
+          const arrow = diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '– ';
+          chg = '<div class="zv-chg ' + cls + '">' + arrow + Math.abs(diff) + ' vs ' + zvDay(prevDate) + '</div>';
+        }
+        return '<div class="zv-card"><div class="zv-name">' + zvEsc(r.view_name) + '</div>' +
+               '<div class="zv-count">' + now.toLocaleString('en-GB') + '</div>' + chg + '</div>';
+      }).join('')
+    : '<div class="zv-note">No snapshot for this team on this date.</div>';
 }
 
 // ============================================================
