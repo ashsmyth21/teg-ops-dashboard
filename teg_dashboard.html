@@ -268,7 +268,8 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
       <span class="week-badge" id="weekBadge">Week —</span>
       <div class="tabs" id="pageTabs" style="margin:0 0 0 12px">
         <button class="tab active" data-page="main" onclick="showPage('main')">Main dashboard</button>
-        <button class="tab" data-page="teams" onclick="showPage('teams')">Team view</button>
+                <button class="tab" data-page="teams" onclick="showPage('teams')">Team view</button>
+        <button class="tab" data-page="views" onclick="showPage('views')">Zendesk views</button>
       </div>
     </div>
     <div class="topbar-right">
@@ -282,6 +283,12 @@ th.sort-desc::after{content:' ↓';opacity:1;color:var(--blue)}
     <div class="section-wrap" style="margin-top:0"><div class="section-label">Team view</div><button class="info-btn" data-tip="Grouped team view. Support = Support + Revered + Support cover. Onboarding includes Onboarding stage 1 calls. Key Accounts and Smartbook are not shown." data-update="From agg_calls_hourly + call back data (UK time)">i</button></div>
     <div id="tvFilterBar" style="display:flex;align-items:center;gap:16px;margin-bottom:10px;flex-wrap:wrap"></div>
     <div id="tvGrid" class="team-grid"><div class="muted" style="font-size:11px">Team view coming soon.</div></div>
+  </div>
+
+   <div class="dash" id="pageViews" style="display:none">
+    <div class="section-wrap" style="margin-top:0"><div class="section-label">Zendesk views</div><button class="info-btn" data-tip="Ticket count per Zendesk view, taken each weekday morning. Change is against the previous snapshot." data-update="From zd_view_counts (daily, 07:30)">i</button></div>
+    <div id="zvFilterBar" style="display:flex;align-items:center;gap:16px;margin-bottom:10px;flex-wrap:wrap"></div>
+    <div id="zvGrid" class="team-grid"><div class="muted" style="font-size:11px">Zendesk views coming soon.</div></div>
   </div>
 
   <div class="dash" id="pageMain">
@@ -2684,7 +2691,8 @@ function tvRender() {
 // ============================================================
 function showPage(page) {
   document.getElementById('pageMain').style.display  = page === 'main'  ? 'block' : 'none';
-  document.getElementById('pageTeams').style.display = page === 'teams' ? 'block' : 'none';
+    document.getElementById('pageTeams').style.display = page === 'teams' ? 'block' : 'none';
+  document.getElementById('pageViews').style.display = page === 'views' ? 'block' : 'none';
   document.querySelectorAll('#pageTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
   window.scrollTo(0, 0);
 }
